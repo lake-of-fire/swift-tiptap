@@ -27,12 +27,13 @@ public struct RichTextEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var draftStore: RichTextEditorSheetDraftStore
+    @StateObject private var titleStore: RichTextEditorSheetTitleDraftStore
     @State private var isEditorReady = false
     @StateObject private var editorContext = EditorContext()
     @State private var linkURL = ""
     @State private var imageURL = ""
 
-    private let navigationTitleSource: NavigationTitleSource
+    private let navigationTitleBinding: Binding<String>?
     private let placeholder: String?
 
     /// Creates a rich text editor sheet.
@@ -47,7 +48,8 @@ public struct RichTextEditorSheet: View {
     ) {
         self._htmlContent = htmlContent
         self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
-        self.navigationTitleSource = .string(title)
+        self._titleStore = StateObject(wrappedValue: RichTextEditorSheetTitleDraftStore(title: title))
+        self.navigationTitleBinding = nil
         self.placeholder = placeholder
     }
 
@@ -63,16 +65,16 @@ public struct RichTextEditorSheet: View {
     ) {
         self._htmlContent = htmlContent
         self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
-        self.navigationTitleSource = .binding(title)
+        self._titleStore = StateObject(wrappedValue: RichTextEditorSheetTitleDraftStore(title: title.wrappedValue))
+        self.navigationTitleBinding = title
         self.placeholder = placeholder
     }
 
     public var body: some View {
         applyNavigationTitle(
             editorNavigationContainer {
-            editorContent
-            },
-            source: navigationTitleSource
+                editorContent
+            }
         )
     }
 
@@ -155,11 +157,13 @@ public struct RichTextEditorSheet: View {
         if #available(iOS 26.0, macOS 26.0, *) {
             Button(role: .cancel) {
                 draftStore.cancel()
+                titleStore.cancel()
                 dismiss()
             }
         } else {
             Button("Cancel") {
                 draftStore.cancel()
+                titleStore.cancel()
                 dismiss()
             }
         }
@@ -170,11 +174,17 @@ public struct RichTextEditorSheet: View {
         if #available(iOS 26.0, macOS 26.0, *) {
             Button(role: .confirm) {
                 htmlContent = draftStore.commit()
+                if let navigationTitleBinding {
+                    navigationTitleBinding.wrappedValue = titleStore.commit()
+                }
                 dismiss()
             }
         } else {
             Button("Done") {
                 htmlContent = draftStore.commit()
+                if let navigationTitleBinding {
+                    navigationTitleBinding.wrappedValue = titleStore.commit()
+                }
                 dismiss()
             }
         }
@@ -194,19 +204,20 @@ public struct RichTextEditorSheet: View {
     }
 
     @ViewBuilder
-    private func applyNavigationTitle<Content: View>(
-        _ content: Content,
-        source: NavigationTitleSource
-    ) -> some View {
-        switch source {
-        case .string(let title):
-            content.navigationTitle(title)
-        case .binding(let title):
+    private func applyNavigationTitle<Content: View>(_ content: Content) -> some View {
+        if navigationTitleBinding != nil {
             if #available(iOS 16.0, macOS 13.0, *) {
-                content.navigationTitle(title)
+                content.navigationTitle(
+                    Binding(
+                        get: { titleStore.draftTitle },
+                        set: { titleStore.draftTitle = $0 }
+                    )
+                )
             } else {
-                content.navigationTitle(title.wrappedValue)
+                content.navigationTitle(titleStore.draftTitle)
             }
+        } else {
+            content.navigationTitle(titleStore.draftTitle)
         }
     }
 }
@@ -230,7 +241,21 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     }
 }
 
-private enum NavigationTitleSource {
-    case string(String)
-    case binding(Binding<String>)
+@MainActor
+final class RichTextEditorSheetTitleDraftStore: ObservableObject {
+    let originalTitle: String
+    @Published var draftTitle: String
+
+    init(title: String) {
+        self.originalTitle = title
+        self.draftTitle = title
+    }
+
+    func commit() -> String {
+        draftTitle
+    }
+
+    func cancel() {
+        draftTitle = originalTitle
+    }
 }
