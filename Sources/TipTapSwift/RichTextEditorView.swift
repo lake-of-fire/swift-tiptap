@@ -8,6 +8,13 @@
 
 import SwiftUI
 import WebKit
+import Foundation
+
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// A WYSIWYG rich text editor powered by TipTap, rendered inside a WKWebView.
 ///
@@ -20,7 +27,8 @@ import WebKit
 ///
 /// RichTextEditorView(htmlContent: $html, editorContext: context)
 /// ```
-public struct RichTextEditorView: UIViewRepresentable {
+@MainActor
+public struct RichTextEditorView {
     @Binding var htmlContent: String
     var placeholder: String
     var editorContext: EditorContext?
@@ -46,37 +54,37 @@ public struct RichTextEditorView: UIViewRepresentable {
         self.onEditorReady = onEditorReady
     }
 
+    @MainActor
     public func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    public func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let contentController = WKUserContentController()
-
-        contentController.add(context.coordinator, name: "contentChanged")
-        contentController.add(context.coordinator, name: "editorReady")
-        contentController.add(context.coordinator, name: "editorHeightChanged")
-
-        config.userContentController = contentController
-
-        let webView = WKWebView(frame: .zero, configuration: config)
+    @MainActor
+    private func configureWebView(_ webView: WKWebView, coordinator: Coordinator) {
+        #if canImport(UIKit)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = true
         webView.scrollView.bounces = true
-        webView.navigationDelegate = context.coordinator
+        #elseif canImport(AppKit)
+        webView.setValue(false, forKey: "drawsBackground")
+        #endif
 
-        context.coordinator.webView = webView
+        webView.navigationDelegate = coordinator
+        coordinator.webView = webView
+
+        #if canImport(UIKit)
         editorContext?.webView = webView
 
-        // Install native formatting toolbar as the keyboard input accessory
         if let editorContext {
             let accessoryView = FormattingAccessoryView(context: editorContext)
-            context.coordinator.accessoryView = accessoryView
+            coordinator.accessoryView = accessoryView
             Self.installInputAccessoryView(accessoryView, on: webView)
         }
+        #else
+        editorContext?.webView = webView
+        #endif
 
         if let resourceURL = Bundle.module.url(
             forResource: "tiptap-editor",
@@ -86,36 +94,20 @@ public struct RichTextEditorView: UIViewRepresentable {
             let directory = resourceURL.deletingLastPathComponent()
             webView.loadFileURL(resourceURL, allowingReadAccessTo: directory)
         }
-
-        return webView
     }
 
-    public func updateUIView(_ webView: WKWebView, context: Context) {
-        let coordinator = context.coordinator
-
-        // Keep editor context wired to the current webView
-        editorContext?.webView = webView
-
-        // Update theme when color scheme changes
+    @MainActor
+    private func applyContentIfNeeded(in webView: WKWebView, coordinator: Coordinator) {
         let theme = colorScheme == .dark ? "dark" : "light"
         if coordinator.currentTheme != theme {
             coordinator.currentTheme = theme
             webView.evaluateJavaScript("window.setTheme('\(theme)')") { _, _ in }
         }
 
-        // Only push content changes originating from Swift (not echoed JS changes)
         if htmlContent != coordinator.lastContentFromJS && coordinator.isEditorReady {
             let escaped = Self.escapeForJS(htmlContent)
             webView.evaluateJavaScript("window.setContent('\(escaped)')") { _, _ in }
         }
-    }
-
-    public static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentChanged")
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorReady")
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorHeightChanged")
-        coordinator.webView = nil
-        coordinator.accessoryView = nil
     }
 
     // MARK: - Helpers
@@ -130,10 +122,11 @@ public struct RichTextEditorView: UIViewRepresentable {
 
     // MARK: - Input Accessory View Installation
 
+    #if canImport(UIKit)
     /// Replaces WKWebView's default input accessory view by dynamically subclassing WKContentView.
     /// This is the standard approach used by production rich text editors on iOS.
+    @MainActor
     private static func installInputAccessoryView(_ accessoryView: UIView, on webView: WKWebView) {
-        // Find WKContentView — the internal UIResponder that becomes first responder on keyboard input
         guard let contentView = webView.scrollView.subviews.first(where: {
             NSStringFromClass(type(of: $0)).hasPrefix("WKContent")
         }) else { return }
@@ -162,13 +155,15 @@ public struct RichTextEditorView: UIViewRepresentable {
 
         object_setClass(contentView, customClass)
     }
+    #endif
 
-    // MARK: - Coordinator
-
+    @MainActor
     public final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, @unchecked Sendable {
         var parent: RichTextEditorView
         var webView: WKWebView?
+        #if canImport(UIKit)
         var accessoryView: FormattingAccessoryView?
+        #endif
         var lastContentFromJS: String = ""
         var isEditorReady = false
         var currentTheme: String?
@@ -221,15 +216,77 @@ public struct RichTextEditorView: UIViewRepresentable {
             }
         }
 
+        @MainActor
         public func webView(
             _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction
-        ) async -> WKNavigationActionPolicy {
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
             if navigationAction.navigationType == .other || navigationAction.request.url?.isFileURL == true {
-                return .allow
+                decisionHandler(.allow)
             } else {
-                return .cancel
+                decisionHandler(.cancel)
             }
         }
     }
 }
+
+#if canImport(UIKit)
+extension RichTextEditorView: UIViewRepresentable {
+    public func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let contentController = WKUserContentController()
+
+        contentController.add(context.coordinator, name: "contentChanged")
+        contentController.add(context.coordinator, name: "editorReady")
+        contentController.add(context.coordinator, name: "editorHeightChanged")
+
+        config.userContentController = contentController
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        configureWebView(webView, coordinator: context.coordinator)
+        return webView
+    }
+
+    public func updateUIView(_ webView: WKWebView, context: Context) {
+        applyContentIfNeeded(in: webView, coordinator: context.coordinator)
+    }
+
+    public static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentChanged")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorReady")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorHeightChanged")
+        coordinator.webView = nil
+        coordinator.accessoryView = nil
+    }
+}
+
+#elseif canImport(AppKit)
+extension RichTextEditorView: NSViewRepresentable {
+    public func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let contentController = WKUserContentController()
+
+        contentController.add(context.coordinator, name: "contentChanged")
+        contentController.add(context.coordinator, name: "editorReady")
+        contentController.add(context.coordinator, name: "editorHeightChanged")
+
+        config.userContentController = contentController
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        configureWebView(webView, coordinator: context.coordinator)
+        return webView
+    }
+
+    public func updateNSView(_ webView: WKWebView, context: Context) {
+        applyContentIfNeeded(in: webView, coordinator: context.coordinator)
+    }
+
+    public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentChanged")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorReady")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorHeightChanged")
+        coordinator.webView = nil
+    }
+}
+#endif

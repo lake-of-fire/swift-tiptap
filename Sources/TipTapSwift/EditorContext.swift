@@ -7,14 +7,14 @@
 
 import SwiftUI
 import WebKit
+import Combine
 
 /// A command channel that lets native SwiftUI controls trigger TipTap formatting.
 ///
 /// ``RichTextEditorView`` populates the internal web view reference automatically.
 /// Use the provided methods to drive the editor from native controls.
 @MainActor
-@Observable
-public final class EditorContext {
+public final class EditorContext: ObservableObject {
 
     // MARK: - Internal
 
@@ -24,10 +24,10 @@ public final class EditorContext {
     // MARK: - Alert State (observed by RichTextEditorSheet)
 
     /// Set to `true` to present a link URL input alert.
-    public var isLinkAlertPresented = false
+    @Published public var isLinkAlertPresented = false
 
     /// Set to `true` to present an image URL input alert.
-    public var isImageAlertPresented = false
+    @Published public var isImageAlertPresented = false
 
     public init() {}
 

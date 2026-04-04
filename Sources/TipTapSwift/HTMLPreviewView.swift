@@ -9,6 +9,12 @@
 import SwiftUI
 import WebKit
 
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
 /// A compact, non-interactive HTML preview for displaying rich text in form fields.
 ///
 /// Unlike ``HTMLContentView``, this view disables user interaction so taps pass through
@@ -23,7 +29,8 @@ import WebKit
 ///         .frame(height: 80)
 /// }
 /// ```
-public struct HTMLPreviewView: UIViewRepresentable {
+@MainActor
+public struct HTMLPreviewView {
     let htmlContent: String
 
     @Environment(\.colorScheme) private var colorScheme
@@ -34,30 +41,24 @@ public struct HTMLPreviewView: UIViewRepresentable {
         self.htmlContent = htmlContent
     }
 
+    @MainActor
     public func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
-    public func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: .zero, configuration: config)
+    private func configureWebView(_ webView: WKWebView, coordinator: Coordinator) {
+        #if canImport(UIKit)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.isUserInteractionEnabled = false
+        #elseif canImport(AppKit)
+        webView.setValue(false, forKey: "drawsBackground")
+        #endif
 
-        context.coordinator.webView = webView
-        context.coordinator.lastHTML = ""
-        context.coordinator.lastTheme = ""
-        loadContent(in: webView, coordinator: context.coordinator)
-
-        return webView
-    }
-
-    public func updateUIView(_ webView: WKWebView, context: Context) {
-        loadContent(in: webView, coordinator: context.coordinator)
+        coordinator.webView = webView
     }
 
     private func loadContent(in webView: WKWebView, coordinator: Coordinator) {
@@ -146,3 +147,39 @@ public struct HTMLPreviewView: UIViewRepresentable {
         var lastTheme = ""
     }
 }
+
+#if canImport(UIKit)
+extension HTMLPreviewView: UIViewRepresentable {
+    public func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        configureWebView(webView, coordinator: context.coordinator)
+        context.coordinator.lastHTML = ""
+        context.coordinator.lastTheme = ""
+        loadContent(in: webView, coordinator: context.coordinator)
+
+        return webView
+    }
+
+    public func updateUIView(_ webView: WKWebView, context: Context) {
+        loadContent(in: webView, coordinator: context.coordinator)
+    }
+}
+#elseif canImport(AppKit)
+extension HTMLPreviewView: NSViewRepresentable {
+    public func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        configureWebView(webView, coordinator: context.coordinator)
+        context.coordinator.lastHTML = ""
+        context.coordinator.lastTheme = ""
+        loadContent(in: webView, coordinator: context.coordinator)
+
+        return webView
+    }
+
+    public func updateNSView(_ webView: WKWebView, context: Context) {
+        loadContent(in: webView, coordinator: context.coordinator)
+    }
+}
+#endif

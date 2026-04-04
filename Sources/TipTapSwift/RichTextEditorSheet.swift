@@ -25,7 +25,7 @@ public struct RichTextEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isEditorReady = false
-    @State private var editorContext = EditorContext()
+    @StateObject private var editorContext = EditorContext()
     @State private var linkURL = ""
     @State private var imageURL = ""
 
@@ -48,7 +48,7 @@ public struct RichTextEditorSheet: View {
     }
 
     public var body: some View {
-        NavigationStack {
+        NavigationView {
             ZStack {
                 RichTextEditorView(
                     htmlContent: $htmlContent,
@@ -68,7 +68,9 @@ public struct RichTextEditorSheet: View {
                 }
             }
             .navigationTitle(title)
+#if canImport(UIKit)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") {
@@ -83,7 +85,9 @@ public struct RichTextEditorSheet: View {
             }
             .alert("Add Link", isPresented: $editorContext.isLinkAlertPresented) {
                 TextField("URL, email, or phone number", text: $linkURL)
+#if canImport(UIKit)
                     .textInputAutocapitalization(.never)
+#endif
                 Button("Add") {
                     if !linkURL.isEmpty {
                         editorContext.setLink(url: linkURL.autoDetectedLink)
@@ -102,8 +106,10 @@ public struct RichTextEditorSheet: View {
             }
             .alert("Add Image", isPresented: $editorContext.isImageAlertPresented) {
                 TextField("https://example.com/image.jpg", text: $imageURL)
+#if canImport(UIKit)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
+#endif
                 Button("Insert") {
                     if !imageURL.isEmpty {
                         editorContext.insertImage(url: imageURL)
@@ -115,5 +121,8 @@ public struct RichTextEditorSheet: View {
                 }
             }
         }
+#if canImport(UIKit)
+        .navigationViewStyle(.stack)
+#endif
     }
 }

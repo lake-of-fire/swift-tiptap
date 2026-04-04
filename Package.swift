@@ -3,9 +3,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "tiptap-swift",
+    name: "swift-tiptap",
     platforms: [
-        .iOS(.v17)
+        .iOS(.v15),
+        .macOS(.v13)
     ],
     products: [
         .library(

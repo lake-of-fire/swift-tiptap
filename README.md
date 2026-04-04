@@ -1,4 +1,4 @@
-# tiptap-swift
+# swift-tiptap
 
 A Swift Package that brings the [TipTap](https://tiptap.dev) WYSIWYG rich text editor to iOS via WKWebView. Produces the same HTML output as the TipTap web editor, so content is fully compatible between your iOS and web apps.
 
@@ -13,7 +13,8 @@ A Swift Package that brings the [TipTap](https://tiptap.dev) WYSIWYG rich text e
 
 ## Requirements
 
-- iOS 17.0+
+- iOS 15.0+
+- macOS 13.0+
 - Swift 6.0+
 - Xcode 16+
 
@@ -25,7 +26,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/irangareddy/tiptap-swift.git", from: "0.1.0")
+    .package(url: "https://github.com/lake-of-fire/swift-tiptap.git", from: "0.1.0")
 ]
 ```
 

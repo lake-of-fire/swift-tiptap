@@ -7,6 +7,8 @@
 //  UIKit glass background (works in keyboard window) + SwiftUI toolbar content.
 //
 
+#if canImport(UIKit)
+
 import SwiftUI
 import UIKit
 
@@ -49,7 +51,6 @@ private struct FormattingToolbar: View {
                 }
                 .padding(.horizontal, 6)
             }
-            .scrollIndicatorsFlash(onAppear: true)
 
             Divider()
                 .frame(height: 24)
@@ -121,7 +122,6 @@ final class FormattingAccessoryView: UIInputView {
         let hosting = UIHostingController(rootView: FormattingToolbar(context: context))
         hosting.view.backgroundColor = .clear
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
-        hosting.safeAreaRegions = []
         addSubview(hosting.view)
 
         NSLayoutConstraint.activate([
@@ -144,3 +144,5 @@ final class FormattingAccessoryView: UIInputView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 }
+
+#endif

@@ -11,11 +11,26 @@ import Testing
     #expect(html.containsHTML)
 }
 
+@Test func angleBracketTextIsNotMistakenForHTML() {
+    let text = "1 < 2 and 3 > 2"
+    #expect(!text.containsHTML)
+}
+
+@Test func htmlWithAttributesIsDetected() {
+    let html = "<a href=\"https://example.com\">Example</a>"
+    #expect(html.containsHTML)
+}
+
 @Test func strippingRemovesAllTags() {
     let html = "<h1>Title</h1><p>Some <em>formatted</em> text.</p>"
     let stripped = html.strippingHTMLTags()
     // Adjacent tags without whitespace collapse together
     #expect(stripped == "TitleSome formatted text.")
+}
+
+@Test func strippingNestedTagsKeepsTextContent() {
+    let html = "<p>Hello <span><strong>world</strong></span>!</p>"
+    #expect(html.strippingHTMLTags() == "Hello world!")
 }
 
 @Test func strippingHandlesSpacedTags() {
@@ -40,6 +55,8 @@ import Testing
 @Test func detectsEmailAddress() {
     #expect("hello@example.com".autoDetectedLink == "mailto:hello@example.com")
     #expect("support@venue.co.uk".autoDetectedLink == "mailto:support@venue.co.uk")
+    #expect("  hello@example.com  ".autoDetectedLink == "mailto:hello@example.com")
+    #expect("hello@example".autoDetectedLink == "https://hello@example")
 }
 
 @Test func detectsPhoneNumber() {
@@ -55,6 +72,7 @@ import Testing
 @Test func detectsURLAndAddsHTTPS() {
     #expect("example.com".autoDetectedLink == "https://example.com")
     #expect("www.venue.com/tickets".autoDetectedLink == "https://www.venue.com/tickets")
+    #expect("  example.com/path?q=1  ".autoDetectedLink == "https://example.com/path?q=1")
 }
 
 @Test func preservesExistingScheme() {

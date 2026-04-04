@@ -8,6 +8,12 @@
 import SwiftUI
 import WebKit
 
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
 /// Renders HTML content in a non-editable WKWebView with auto-sizing height.
 ///
 /// Use this to display rich text descriptions that were created with ``RichTextEditorView``.
@@ -18,7 +24,8 @@ import WebKit
 /// HTMLContentView(htmlContent: event.description, contentHeight: $height)
 ///     .frame(height: height)
 /// ```
-public struct HTMLContentView: UIViewRepresentable {
+@MainActor
+public struct HTMLContentView {
     let htmlContent: String
     @Binding var contentHeight: CGFloat
 
@@ -29,38 +36,24 @@ public struct HTMLContentView: UIViewRepresentable {
         self._contentHeight = contentHeight
     }
 
+    @MainActor
     public func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    public func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.dataDetectorTypes = [.phoneNumber, .link, .address]
-        let contentController = WKUserContentController()
-        contentController.add(context.coordinator, name: "heightChanged")
-        config.userContentController = contentController
-
-        let webView = WKWebView(frame: .zero, configuration: config)
+    private func configureWebView(_ webView: WKWebView, coordinator: Coordinator) {
+        #if canImport(UIKit)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
-        webView.navigationDelegate = context.coordinator
+        #elseif canImport(AppKit)
+        webView.setValue(false, forKey: "drawsBackground")
+        #endif
 
-        context.coordinator.webView = webView
-        loadContent(in: webView)
-
-        return webView
-    }
-
-    public func updateUIView(_ webView: WKWebView, context: Context) {
-        loadContent(in: webView)
-    }
-
-    public static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightChanged")
-        coordinator.webView = nil
+        webView.navigationDelegate = coordinator
+        coordinator.webView = webView
     }
 
     private func loadContent(in webView: WKWebView) {
@@ -172,18 +165,73 @@ public struct HTMLContentView: UIViewRepresentable {
             }
         }
 
-        @MainActor
         public func webView(
             _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction
-        ) async -> WKNavigationActionPolicy {
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
             if navigationAction.navigationType == .linkActivated,
                let url = navigationAction.request.url {
-                await UIApplication.shared.open(url)
-                return .cancel
+                #if canImport(UIKit)
+                UIApplication.shared.open(url)
+                #elseif canImport(AppKit)
+                NSWorkspace.shared.open(url)
+                #endif
+                decisionHandler(.cancel)
             } else {
-                return .allow
+                decisionHandler(.allow)
             }
         }
     }
 }
+
+#if canImport(UIKit)
+extension HTMLContentView: UIViewRepresentable {
+    public func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.dataDetectorTypes = [.phoneNumber, .link, .address]
+        let contentController = WKUserContentController()
+        contentController.add(context.coordinator, name: "heightChanged")
+        config.userContentController = contentController
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        configureWebView(webView, coordinator: context.coordinator)
+        loadContent(in: webView)
+
+        return webView
+    }
+
+    public func updateUIView(_ webView: WKWebView, context: Context) {
+        loadContent(in: webView)
+    }
+
+    public static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightChanged")
+        coordinator.webView = nil
+    }
+}
+#elseif canImport(AppKit)
+extension HTMLContentView: NSViewRepresentable {
+    public func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let contentController = WKUserContentController()
+        contentController.add(context.coordinator, name: "heightChanged")
+        config.userContentController = contentController
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        configureWebView(webView, coordinator: context.coordinator)
+        loadContent(in: webView)
+
+        return webView
+    }
+
+    public func updateNSView(_ webView: WKWebView, context: Context) {
+        loadContent(in: webView)
+    }
+
+    public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightChanged")
+        coordinator.webView = nil
+    }
+}
+#endif
