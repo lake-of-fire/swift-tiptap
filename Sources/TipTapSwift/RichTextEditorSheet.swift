@@ -7,6 +7,8 @@
 //
 
 import SwiftUI
+import Combine
+import NavigationBackport
 
 /// A sheet that wraps ``RichTextEditorView`` with Cancel / Done toolbar buttons.
 ///
@@ -24,13 +26,14 @@ public struct RichTextEditorSheet: View {
     @Binding var htmlContent: String
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var draftStore: RichTextEditorSheetDraftStore
     @State private var isEditorReady = false
     @StateObject private var editorContext = EditorContext()
     @State private var linkURL = ""
     @State private var imageURL = ""
 
     private let title: String
-    private let placeholder: String
+    private let placeholder: String?
 
     /// Creates a rich text editor sheet.
     /// - Parameters:
@@ -40,89 +43,154 @@ public struct RichTextEditorSheet: View {
     public init(
         htmlContent: Binding<String>,
         title: String = "Description",
-        placeholder: String = "Start typing..."
+        placeholder: String? = nil
     ) {
         self._htmlContent = htmlContent
+        self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
         self.title = title
         self.placeholder = placeholder
     }
 
     public var body: some View {
-        NavigationView {
-            ZStack {
-                RichTextEditorView(
-                    htmlContent: $htmlContent,
-                    placeholder: placeholder,
-                    editorContext: editorContext,
-                    onEditorReady: {
-                        withAnimation(.easeIn(duration: 0.2)) {
-                            isEditorReady = true
-                        }
-                    }
-                )
-                .opacity(isEditorReady ? 1 : 0)
+        editorNavigationContainer {
+            editorContent
+        }
+    }
 
-                if !isEditorReady {
-                    ProgressView("Loading editor...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .navigationTitle(title)
-#if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", systemImage: "xmark") {
-                        dismiss()
+    @ViewBuilder
+    private var editorContent: some View {
+        ZStack {
+            RichTextEditorView(
+                htmlContent: Binding(
+                    get: { draftStore.draftHTMLContent },
+                    set: { draftStore.draftHTMLContent = $0 }
+                ),
+                placeholder: placeholder,
+                editorContext: editorContext,
+                onEditorReady: {
+                    withAnimation(.easeIn(duration: 0.2)) {
+                        isEditorReady = true
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", systemImage: "checkmark") {
-                        dismiss()
-                    }
-                }
-            }
-            .alert("Add Link", isPresented: $editorContext.isLinkAlertPresented) {
-                TextField("URL, email, or phone number", text: $linkURL)
-#if canImport(UIKit)
-                    .textInputAutocapitalization(.never)
-#endif
-                Button("Add") {
-                    if !linkURL.isEmpty {
-                        editorContext.setLink(url: linkURL.autoDetectedLink)
-                    }
-                    linkURL = ""
-                }
-                Button("Remove Link", role: .destructive) {
-                    editorContext.removeLink()
-                    linkURL = ""
-                }
-                Button("Cancel", role: .cancel) {
-                    linkURL = ""
-                }
-            } message: {
-                Text("Auto-detects links, emails, and phone numbers")
-            }
-            .alert("Add Image", isPresented: $editorContext.isImageAlertPresented) {
-                TextField("https://example.com/image.jpg", text: $imageURL)
-#if canImport(UIKit)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-#endif
-                Button("Insert") {
-                    if !imageURL.isEmpty {
-                        editorContext.insertImage(url: imageURL)
-                    }
-                    imageURL = ""
-                }
-                Button("Cancel", role: .cancel) {
-                    imageURL = ""
-                }
+            )
+            .opacity(isEditorReady ? 1 : 0)
+
+            if !isEditorReady {
+                ProgressView()
+                    .tint(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .navigationTitle(title)
 #if canImport(UIKit)
-        .navigationViewStyle(.stack)
+        .navigationBarTitleDisplayMode(.inline)
 #endif
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                cancelButton
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                doneButton
+            }
+        }
+        .alert("Add Link", isPresented: $editorContext.isLinkAlertPresented) {
+            TextField("URL, email, or phone number", text: $linkURL)
+#if canImport(UIKit)
+                .textInputAutocapitalization(.never)
+#endif
+            Button("Add") {
+                if !linkURL.isEmpty {
+                    editorContext.setLink(url: linkURL.autoDetectedLink)
+                }
+                linkURL = ""
+            }
+            Button("Remove Link", role: .destructive) {
+                editorContext.removeLink()
+                linkURL = ""
+            }
+            Button("Cancel", role: .cancel) {
+                linkURL = ""
+            }
+        } message: {
+            Text("Auto-detects links, emails, and phone numbers")
+        }
+        .alert("Add Image", isPresented: $editorContext.isImageAlertPresented) {
+            TextField("https://example.com/image.jpg", text: $imageURL)
+#if canImport(UIKit)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+#endif
+            Button("Insert") {
+                if !imageURL.isEmpty {
+                    editorContext.insertImage(url: imageURL)
+                }
+                imageURL = ""
+            }
+            Button("Cancel", role: .cancel) {
+                imageURL = ""
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var cancelButton: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            Button(role: .cancel) {
+                draftStore.cancel()
+                dismiss()
+            }
+        } else {
+            Button("Cancel") {
+                draftStore.cancel()
+                dismiss()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var doneButton: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            Button(role: .confirm) {
+                htmlContent = draftStore.commit()
+                dismiss()
+            }
+        } else {
+            Button("Done") {
+                htmlContent = draftStore.commit()
+                dismiss()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func editorNavigationContainer<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            NavigationStack {
+                content()
+            }
+        } else {
+            NBNavigationStack {
+                content()
+            }
+        }
+    }
+}
+
+@MainActor
+final class RichTextEditorSheetDraftStore: ObservableObject {
+    let originalHTMLContent: String
+    @Published var draftHTMLContent: String
+
+    init(htmlContent: String) {
+        self.originalHTMLContent = htmlContent
+        self.draftHTMLContent = htmlContent
+    }
+
+    func commit() -> String {
+        draftHTMLContent
+    }
+
+    func cancel() {
+        draftHTMLContent = originalHTMLContent
     }
 }

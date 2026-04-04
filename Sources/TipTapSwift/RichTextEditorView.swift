@@ -30,7 +30,7 @@ import AppKit
 @MainActor
 public struct RichTextEditorView {
     @Binding var htmlContent: String
-    var placeholder: String
+    var placeholder: String?
     var editorContext: EditorContext?
     var onEditorReady: (() -> Void)?
 
@@ -44,7 +44,7 @@ public struct RichTextEditorView {
     ///   - onEditorReady: Called once the TipTap editor has fully initialized.
     public init(
         htmlContent: Binding<String>,
-        placeholder: String = "Start typing...",
+        placeholder: String? = nil,
         editorContext: EditorContext? = nil,
         onEditorReady: (() -> Void)? = nil
     ) {
@@ -168,11 +168,9 @@ public struct RichTextEditorView {
         var isEditorReady = false
         var currentTheme: String?
         private var pendingContent: String?
-        private var pendingPlaceholder: String
 
         init(_ parent: RichTextEditorView) {
             self.parent = parent
-            self.pendingPlaceholder = parent.placeholder
             if !parent.htmlContent.isEmpty {
                 self.pendingContent = parent.htmlContent
             }

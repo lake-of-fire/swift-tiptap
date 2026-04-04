@@ -14,9 +14,15 @@ let package = Package(
             targets: ["TipTapSwift"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/johnpatrickmorgan/NavigationBackport.git", branch: "main")
+    ],
     targets: [
         .target(
             name: "TipTapSwift",
+            dependencies: [
+                .product(name: "NavigationBackport", package: "NavigationBackport")
+            ],
             resources: [
                 .copy("Resources/RichTextEditor")
             ]
