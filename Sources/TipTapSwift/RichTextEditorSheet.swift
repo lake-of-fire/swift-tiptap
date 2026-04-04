@@ -32,7 +32,7 @@ public struct RichTextEditorSheet: View {
     @State private var linkURL = ""
     @State private var imageURL = ""
 
-    private let title: String
+    private let navigationTitleSource: NavigationTitleSource
     private let placeholder: String?
 
     /// Creates a rich text editor sheet.
@@ -47,14 +47,33 @@ public struct RichTextEditorSheet: View {
     ) {
         self._htmlContent = htmlContent
         self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
-        self.title = title
+        self.navigationTitleSource = .string(title)
+        self.placeholder = placeholder
+    }
+
+    /// Creates a rich text editor sheet with a bound navigation title.
+    /// - Parameters:
+    ///   - htmlContent: Binding to the HTML string to edit.
+    ///   - title: Binding to the navigation bar title text.
+    ///   - placeholder: Placeholder shown when editor is empty.
+    public init(
+        htmlContent: Binding<String>,
+        title: Binding<String>,
+        placeholder: String? = nil
+    ) {
+        self._htmlContent = htmlContent
+        self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
+        self.navigationTitleSource = .binding(title)
         self.placeholder = placeholder
     }
 
     public var body: some View {
-        editorNavigationContainer {
+        applyNavigationTitle(
+            editorNavigationContainer {
             editorContent
-        }
+            },
+            source: navigationTitleSource
+        )
     }
 
     @ViewBuilder
@@ -81,7 +100,6 @@ public struct RichTextEditorSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle(title)
 #if canImport(UIKit)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -174,6 +192,23 @@ public struct RichTextEditorSheet: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func applyNavigationTitle<Content: View>(
+        _ content: Content,
+        source: NavigationTitleSource
+    ) -> some View {
+        switch source {
+        case .string(let title):
+            content.navigationTitle(title)
+        case .binding(let title):
+            if #available(iOS 16.0, macOS 13.0, *) {
+                content.navigationTitle(title)
+            } else {
+                content.navigationTitle(title.wrappedValue)
+            }
+        }
+    }
 }
 
 @MainActor
@@ -193,4 +228,9 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     func cancel() {
         draftHTMLContent = originalHTMLContent
     }
+}
+
+private enum NavigationTitleSource {
+    case string(String)
+    case binding(Binding<String>)
 }
