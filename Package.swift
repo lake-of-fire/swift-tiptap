@@ -15,7 +15,10 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/johnpatrickmorgan/NavigationBackport.git", branch: "main")
+        .package(
+            url: "https://github.com/johnpatrickmorgan/NavigationBackport.git",
+            revision: "540d823fdfbbe495cbbe0afc80c409d63c9995c0"
+        )
     ],
     targets: [
         .target(

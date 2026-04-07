@@ -27,7 +27,7 @@ public struct RichTextEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var draftStore: RichTextEditorSheetDraftStore
-    @StateObject private var titleStore: RichTextEditorSheetTitleDraftStore
+    @State private var draftTitle: String
     @State private var isEditorReady = false
     @StateObject private var editorContext = EditorContext()
     @State private var linkURL = ""
@@ -48,7 +48,7 @@ public struct RichTextEditorSheet: View {
     ) {
         self._htmlContent = htmlContent
         self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
-        self._titleStore = StateObject(wrappedValue: RichTextEditorSheetTitleDraftStore(title: title))
+        self._draftTitle = State(initialValue: title)
         self.navigationTitleBinding = nil
         self.placeholder = placeholder
     }
@@ -65,7 +65,7 @@ public struct RichTextEditorSheet: View {
     ) {
         self._htmlContent = htmlContent
         self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
-        self._titleStore = StateObject(wrappedValue: RichTextEditorSheetTitleDraftStore(title: title.wrappedValue))
+        self._draftTitle = State(initialValue: title.wrappedValue)
         self.navigationTitleBinding = title
         self.placeholder = placeholder
     }
@@ -157,13 +157,11 @@ public struct RichTextEditorSheet: View {
         if #available(iOS 26.0, macOS 26.0, *) {
             Button(role: .cancel) {
                 draftStore.cancel()
-                titleStore.cancel()
                 dismiss()
             }
         } else {
             Button("Cancel") {
                 draftStore.cancel()
-                titleStore.cancel()
                 dismiss()
             }
         }
@@ -175,7 +173,7 @@ public struct RichTextEditorSheet: View {
             Button(role: .confirm) {
                 htmlContent = draftStore.commit()
                 if let navigationTitleBinding {
-                    navigationTitleBinding.wrappedValue = titleStore.commit()
+                    navigationTitleBinding.wrappedValue = draftTitle
                 }
                 dismiss()
             }
@@ -183,7 +181,7 @@ public struct RichTextEditorSheet: View {
             Button("Done") {
                 htmlContent = draftStore.commit()
                 if let navigationTitleBinding {
-                    navigationTitleBinding.wrappedValue = titleStore.commit()
+                    navigationTitleBinding.wrappedValue = draftTitle
                 }
                 dismiss()
             }
@@ -209,15 +207,15 @@ public struct RichTextEditorSheet: View {
             if #available(iOS 16.0, macOS 13.0, *) {
                 content.navigationTitle(
                     Binding(
-                        get: { titleStore.draftTitle },
-                        set: { titleStore.draftTitle = $0 }
+                        get: { draftTitle },
+                        set: { draftTitle = $0 }
                     )
                 )
             } else {
-                content.navigationTitle(titleStore.draftTitle)
+                content.navigationTitle(draftTitle)
             }
         } else {
-            content.navigationTitle(titleStore.draftTitle)
+            content.navigationTitle(draftTitle)
         }
     }
 }
@@ -238,24 +236,5 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
 
     func cancel() {
         draftHTMLContent = originalHTMLContent
-    }
-}
-
-@MainActor
-final class RichTextEditorSheetTitleDraftStore: ObservableObject {
-    let originalTitle: String
-    @Published var draftTitle: String
-
-    init(title: String) {
-        self.originalTitle = title
-        self.draftTitle = title
-    }
-
-    func commit() -> String {
-        draftTitle
-    }
-
-    func cancel() {
-        draftTitle = originalTitle
     }
 }
