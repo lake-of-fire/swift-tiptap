@@ -29,12 +29,16 @@ public struct RichTextEditorSheet: View {
     @StateObject private var draftStore: RichTextEditorSheetDraftStore
     @State private var draftTitle: String
     @State private var isEditorReady = false
+    @State private var isPresentingDiscardConfirmation = false
     @StateObject private var editorContext = EditorContext()
     @State private var linkURL = ""
     @State private var imageURL = ""
 
+    private let originalTitle: String
     private let navigationTitleBinding: Binding<String>?
     private let placeholder: String?
+    private let onCancel: (() -> Void)?
+    private let onSave: ((String, String) -> Void)?
 
     /// Creates a rich text editor sheet.
     /// - Parameters:
@@ -44,13 +48,18 @@ public struct RichTextEditorSheet: View {
     public init(
         htmlContent: Binding<String>,
         title: String = "Description",
-        placeholder: String? = nil
+        placeholder: String? = nil,
+        onCancel: (() -> Void)? = nil,
+        onSave: ((String, String) -> Void)? = nil
     ) {
         self._htmlContent = htmlContent
         self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
         self._draftTitle = State(initialValue: title)
+        self.originalTitle = title
         self.navigationTitleBinding = nil
         self.placeholder = placeholder
+        self.onCancel = onCancel
+        self.onSave = onSave
     }
 
     /// Creates a rich text editor sheet with a bound navigation title.
@@ -61,13 +70,22 @@ public struct RichTextEditorSheet: View {
     public init(
         htmlContent: Binding<String>,
         title: Binding<String>,
-        placeholder: String? = nil
+        placeholder: String? = nil,
+        onCancel: (() -> Void)? = nil,
+        onSave: ((String, String) -> Void)? = nil
     ) {
         self._htmlContent = htmlContent
         self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
         self._draftTitle = State(initialValue: title.wrappedValue)
+        self.originalTitle = title.wrappedValue
         self.navigationTitleBinding = title
         self.placeholder = placeholder
+        self.onCancel = onCancel
+        self.onSave = onSave
+    }
+
+    private var hasEdits: Bool {
+        draftStore.hasEdits || draftTitle != originalTitle
     }
 
     public var body: some View {
@@ -105,6 +123,7 @@ public struct RichTextEditorSheet: View {
 #if canImport(UIKit)
         .navigationBarTitleDisplayMode(.inline)
 #endif
+        .interactiveDismissDisabled(hasEdits)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 cancelButton
@@ -112,6 +131,14 @@ public struct RichTextEditorSheet: View {
             ToolbarItem(placement: .confirmationAction) {
                 doneButton
             }
+        }
+        .confirmationDialog("Discard Changes?", isPresented: $isPresentingDiscardConfirmation, titleVisibility: .visible) {
+            Button("Discard Changes", role: .destructive) {
+                performCancel()
+            }
+            Button("Keep Editing", role: .cancel) { }
+        } message: {
+            Text("Your changes haven’t been saved.")
         }
         .alert("Add Link", isPresented: $editorContext.isLinkAlertPresented) {
             TextField("URL, email, or phone number", text: $linkURL)
@@ -156,36 +183,53 @@ public struct RichTextEditorSheet: View {
     private var cancelButton: some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             Button(role: .cancel) {
-                draftStore.cancel()
-                dismiss()
+                handleCancel()
             }
+            .tint(.primary)
         } else {
             Button("Cancel") {
-                draftStore.cancel()
-                dismiss()
+                handleCancel()
             }
         }
     }
 
     @ViewBuilder
     private var doneButton: some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            Button(role: .confirm) {
-                htmlContent = draftStore.commit()
-                if let navigationTitleBinding {
-                    navigationTitleBinding.wrappedValue = draftTitle
+        if hasEdits {
+            if #available(iOS 26.0, macOS 26.0, *) {
+                Button(role: .confirm) {
+                    performSave()
                 }
-                dismiss()
-            }
-        } else {
-            Button("Done") {
-                htmlContent = draftStore.commit()
-                if let navigationTitleBinding {
-                    navigationTitleBinding.wrappedValue = draftTitle
+            } else {
+                Button("Done") {
+                    performSave()
                 }
-                dismiss()
             }
         }
+    }
+
+    private func handleCancel() {
+        if hasEdits {
+            isPresentingDiscardConfirmation = true
+        } else {
+            performCancel()
+        }
+    }
+
+    private func performCancel() {
+        draftStore.cancel()
+        onCancel?()
+        dismiss()
+    }
+
+    private func performSave() {
+        let committedHTML = draftStore.commit()
+        htmlContent = committedHTML
+        if let navigationTitleBinding {
+            navigationTitleBinding.wrappedValue = draftTitle
+        }
+        onSave?(draftTitle, committedHTML)
+        dismiss()
     }
 
     @ViewBuilder
@@ -228,6 +272,10 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     init(htmlContent: String) {
         self.originalHTMLContent = htmlContent
         self.draftHTMLContent = htmlContent
+    }
+
+    var hasEdits: Bool {
+        draftHTMLContent != originalHTMLContent
     }
 
     func commit() -> String {
