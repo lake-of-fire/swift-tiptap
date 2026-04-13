@@ -8,6 +8,7 @@ import Testing
 
     #expect(store.originalHTMLContent == original)
     #expect(store.draftHTMLContent == original)
+    #expect(store.hasEdits == false)
 }
 
 @MainActor
@@ -20,6 +21,7 @@ import Testing
 
     #expect(store.draftHTMLContent == original)
     #expect(store.originalHTMLContent == original)
+    #expect(store.hasEdits == false)
 }
 
 @MainActor
@@ -35,4 +37,28 @@ import Testing
     #expect(committed == "<p>Final edit</p>")
     #expect(store.originalHTMLContent == original)
     #expect(store.draftHTMLContent == "<p>Final edit</p>")
+    #expect(store.hasEdits == true)
+}
+
+@MainActor
+@Test func firstEditorSyncBecomesBaselineWithoutCountingAsAnEdit() {
+    let store = RichTextEditorSheetDraftStore(htmlContent: "")
+
+    store.syncFromEditor("<p></p>")
+
+    #expect(store.originalHTMLContent == "<p></p>")
+    #expect(store.draftHTMLContent == "<p></p>")
+    #expect(store.hasEdits == false)
+}
+
+@MainActor
+@Test func subsequentEditorSyncsStillCountAsEdits() {
+    let store = RichTextEditorSheetDraftStore(htmlContent: "")
+
+    store.syncFromEditor("<p></p>")
+    store.syncFromEditor("<p>Hello</p>")
+
+    #expect(store.originalHTMLContent == "<p></p>")
+    #expect(store.draftHTMLContent == "<p>Hello</p>")
+    #expect(store.hasEdits == true)
 }

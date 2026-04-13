@@ -102,7 +102,7 @@ public struct RichTextEditorSheet: View {
             RichTextEditorView(
                 htmlContent: Binding(
                     get: { draftStore.draftHTMLContent },
-                    set: { draftStore.draftHTMLContent = $0 }
+                    set: { draftStore.syncFromEditor($0) }
                 ),
                 placeholder: placeholder,
                 editorContext: editorContext,
@@ -266,8 +266,9 @@ public struct RichTextEditorSheet: View {
 
 @MainActor
 final class RichTextEditorSheetDraftStore: ObservableObject {
-    let originalHTMLContent: String
+    private(set) var originalHTMLContent: String
     @Published var draftHTMLContent: String
+    private var hasCapturedEditorBaseline = false
 
     init(htmlContent: String) {
         self.originalHTMLContent = htmlContent
@@ -276,6 +277,14 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
 
     var hasEdits: Bool {
         draftHTMLContent != originalHTMLContent
+    }
+
+    func syncFromEditor(_ htmlContent: String) {
+        if !hasCapturedEditorBaseline {
+            originalHTMLContent = htmlContent
+            hasCapturedEditorBaseline = true
+        }
+        draftHTMLContent = htmlContent
     }
 
     func commit() -> String {
