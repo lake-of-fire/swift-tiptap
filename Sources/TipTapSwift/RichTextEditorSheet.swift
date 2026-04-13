@@ -99,14 +99,15 @@ public struct RichTextEditorSheet: View {
     @ViewBuilder
     private var editorContent: some View {
         ZStack {
-            RichTextEditorView(
-                htmlContent: Binding(
-                    get: { draftStore.draftHTMLContent },
-                    set: { draftStore.syncFromEditor($0) }
-                ),
+                RichTextEditorView(
+                    htmlContent: Binding(
+                        get: { draftStore.draftHTMLContent },
+                        set: { draftStore.syncFromEditor($0) }
+                    ),
                 placeholder: placeholder,
                 editorContext: editorContext,
                 onEditorReady: {
+                    draftStore.scheduleBeginTrackingEdits()
                     withAnimation(.easeIn(duration: 0.2)) {
                         isEditorReady = true
                     }
@@ -268,7 +269,8 @@ public struct RichTextEditorSheet: View {
 final class RichTextEditorSheetDraftStore: ObservableObject {
     private(set) var originalHTMLContent: String
     @Published var draftHTMLContent: String
-    private var hasCapturedEditorBaseline = false
+    private var isTrackingEdits = false
+    private var beginTrackingTask: Task<Void, Never>?
 
     init(htmlContent: String) {
         self.originalHTMLContent = htmlContent
@@ -276,22 +278,34 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     }
 
     var hasEdits: Bool {
-        draftHTMLContent != originalHTMLContent
+        guard isTrackingEdits else { return false }
+        return draftHTMLContent != originalHTMLContent
     }
 
     func syncFromEditor(_ htmlContent: String) {
-        if !hasCapturedEditorBaseline {
+        if !isTrackingEdits {
             originalHTMLContent = htmlContent
-            hasCapturedEditorBaseline = true
         }
         draftHTMLContent = htmlContent
     }
 
+    func scheduleBeginTrackingEdits() {
+        beginTrackingTask?.cancel()
+        beginTrackingTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            originalHTMLContent = draftHTMLContent
+            isTrackingEdits = true
+        }
+    }
+
     func commit() -> String {
+        beginTrackingTask?.cancel()
         draftHTMLContent
     }
 
     func cancel() {
+        beginTrackingTask?.cancel()
         draftHTMLContent = originalHTMLContent
     }
 }
