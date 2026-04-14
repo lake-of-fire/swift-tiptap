@@ -33,6 +33,7 @@ public struct RichTextEditorSheet: View {
     @StateObject private var editorContext = EditorContext()
     @State private var linkURL = ""
     @State private var imageURL = ""
+    @State private var lastLoggedHasEdits = false
 
     private let originalTitle: String
     private let navigationTitleBinding: Binding<String>?
@@ -99,15 +100,14 @@ public struct RichTextEditorSheet: View {
     @ViewBuilder
     private var editorContent: some View {
         ZStack {
-                RichTextEditorView(
-                    htmlContent: Binding(
-                        get: { draftStore.draftHTMLContent },
-                        set: { draftStore.syncFromEditor($0) }
-                    ),
+            RichTextEditorView(
+                htmlContent: Binding(
+                    get: { draftStore.draftHTMLContent },
+                    set: { draftStore.syncFromEditor($0) }
+                ),
                 placeholder: placeholder,
                 editorContext: editorContext,
                 onEditorReady: {
-                    draftStore.scheduleBeginTrackingEdits()
                     withAnimation(.easeIn(duration: 0.2)) {
                         isEditorReady = true
                     }
@@ -125,6 +125,16 @@ public struct RichTextEditorSheet: View {
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .interactiveDismissDisabled(hasEdits)
+        .onAppear {
+            lastLoggedHasEdits = hasEdits
+            logState("sheet_appeared")
+        }
+        .onChange(of: draftStore.draftHTMLContent) { _ in
+            logState("html_changed")
+        }
+        .onChange(of: draftTitle) { _ in
+            logState("title_changed")
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 cancelButton
@@ -210,6 +220,7 @@ public struct RichTextEditorSheet: View {
     }
 
     private func handleCancel() {
+        logState("cancel_tapped")
         if hasEdits {
             isPresentingDiscardConfirmation = true
         } else {
@@ -218,6 +229,7 @@ public struct RichTextEditorSheet: View {
     }
 
     private func performCancel() {
+        logState("cancel_confirmed")
         draftStore.cancel()
         onCancel?()
         dismiss()
@@ -225,6 +237,7 @@ public struct RichTextEditorSheet: View {
 
     private func performSave() {
         let committedHTML = draftStore.commit()
+        logState("save_confirmed")
         htmlContent = committedHTML
         if let navigationTitleBinding {
             navigationTitleBinding.wrappedValue = draftTitle
@@ -263,49 +276,62 @@ public struct RichTextEditorSheet: View {
             content.navigationTitle(draftTitle)
         }
     }
+
+    private func logState(_ event: String) {
+        let htmlHasEdits = draftStore.hasEdits
+        let titleHasEdits = draftTitle != originalTitle
+        let currentHasEdits = htmlHasEdits || titleHasEdits
+
+        print(
+            """
+            # TIPTAP \(event) \
+            htmlHasEdits=\(htmlHasEdits) \
+            titleHasEdits=\(titleHasEdits) \
+            hasEdits=\(currentHasEdits) \
+            originalHTMLLength=\(draftStore.originalHTMLContent.count) \
+            draftHTMLLength=\(draftStore.draftHTMLContent.count) \
+            originalTitle=\(originalTitle.debugDescription) \
+            draftTitle=\(draftTitle.debugDescription)
+            """
+        )
+
+        if currentHasEdits != lastLoggedHasEdits {
+            print("# TIPTAP hasEdits_changed old=\(lastLoggedHasEdits) new=\(currentHasEdits)")
+            lastLoggedHasEdits = currentHasEdits
+        }
+    }
 }
 
 @MainActor
 final class RichTextEditorSheetDraftStore: ObservableObject {
     private(set) var originalHTMLContent: String
     @Published var draftHTMLContent: String
-    private var isTrackingEdits = false
-    private var beginTrackingTask: Task<Void, Never>?
+    private var hasCapturedEditorBaseline = false
 
     init(htmlContent: String) {
         self.originalHTMLContent = htmlContent
         self.draftHTMLContent = htmlContent
+        print("# TIPTAP draft_store_init originalHTMLLength=\(htmlContent.count)")
     }
 
     var hasEdits: Bool {
-        guard isTrackingEdits else { return false }
+        guard hasCapturedEditorBaseline else { return false }
         return draftHTMLContent != originalHTMLContent
     }
 
     func syncFromEditor(_ htmlContent: String) {
-        if !isTrackingEdits {
+        if !hasCapturedEditorBaseline {
             originalHTMLContent = htmlContent
+            hasCapturedEditorBaseline = true
         }
         draftHTMLContent = htmlContent
     }
 
-    func scheduleBeginTrackingEdits() {
-        beginTrackingTask?.cancel()
-        beginTrackingTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return }
-            originalHTMLContent = draftHTMLContent
-            isTrackingEdits = true
-        }
-    }
-
     func commit() -> String {
-        beginTrackingTask?.cancel()
         draftHTMLContent
     }
 
     func cancel() {
-        beginTrackingTask?.cancel()
         draftHTMLContent = originalHTMLContent
     }
 }
