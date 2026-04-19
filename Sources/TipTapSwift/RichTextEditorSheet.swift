@@ -90,11 +90,9 @@ public struct RichTextEditorSheet: View {
     }
 
     public var body: some View {
-        applyNavigationTitle(
-            editorNavigationContainer {
-                editorContent
-            }
-        )
+        editorNavigationContainer {
+            applyNavigationTitle(editorContent)
+        }
     }
 
     @ViewBuilder
@@ -138,6 +136,18 @@ public struct RichTextEditorSheet: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 cancelButton
+            }
+            ToolbarItem(placement: .principal) {
+                if navigationTitleBinding != nil {
+                    if #available(iOS 16.0, macOS 13.0, *) {
+                        HStack(spacing: 6) {
+                            Text(draftTitle)
+                                .font(.headline)
+                                .lineLimit(1)
+                            RenameButton()
+                        }
+                    }
+                }
             }
             ToolbarItem(placement: .confirmationAction) {
                 doneButton
@@ -263,12 +273,13 @@ public struct RichTextEditorSheet: View {
     private func applyNavigationTitle<Content: View>(_ content: Content) -> some View {
         if navigationTitleBinding != nil {
             if #available(iOS 16.0, macOS 13.0, *) {
-                content.navigationTitle(
-                    Binding(
-                        get: { draftTitle },
-                        set: { draftTitle = $0 }
+                content
+                    .navigationTitle(
+                        Binding(
+                            get: { draftTitle },
+                            set: { draftTitle = $0 }
+                        )
                     )
-                )
             } else {
                 content.navigationTitle(draftTitle)
             }
