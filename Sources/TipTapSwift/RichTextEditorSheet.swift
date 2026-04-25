@@ -8,7 +8,6 @@
 
 import SwiftUI
 import Combine
-import NavigationBackport
 
 /// A sheet that wraps ``RichTextEditorView`` with Cancel / Done toolbar buttons.
 ///
@@ -250,7 +249,7 @@ public struct RichTextEditorSheet: View {
                 content()
             }
         } else {
-            NBNavigationStack {
+            NavigationView {
                 content()
             }
         }
