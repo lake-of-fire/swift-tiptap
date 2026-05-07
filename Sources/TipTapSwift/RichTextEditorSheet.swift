@@ -36,6 +36,7 @@ public struct RichTextEditorSheet: View {
     private let originalTitle: String
     private let navigationTitleBinding: Binding<String>?
     private let placeholder: String?
+    private let normalizeOnSave: (String) -> String
     private let onCancel: (() -> Void)?
     private let onSave: ((String, String) -> Void)?
 
@@ -48,6 +49,7 @@ public struct RichTextEditorSheet: View {
         htmlContent: Binding<String>,
         title: String = "Description",
         placeholder: String? = nil,
+        normalizeOnSave: @escaping (String) -> String = { $0 },
         onCancel: (() -> Void)? = nil,
         onSave: ((String, String) -> Void)? = nil
     ) {
@@ -57,6 +59,7 @@ public struct RichTextEditorSheet: View {
         self.originalTitle = title
         self.navigationTitleBinding = nil
         self.placeholder = placeholder
+        self.normalizeOnSave = normalizeOnSave
         self.onCancel = onCancel
         self.onSave = onSave
     }
@@ -70,6 +73,7 @@ public struct RichTextEditorSheet: View {
         htmlContent: Binding<String>,
         title: Binding<String>,
         placeholder: String? = nil,
+        normalizeOnSave: @escaping (String) -> String = { $0 },
         onCancel: (() -> Void)? = nil,
         onSave: ((String, String) -> Void)? = nil
     ) {
@@ -79,6 +83,7 @@ public struct RichTextEditorSheet: View {
         self.originalTitle = title.wrappedValue
         self.navigationTitleBinding = title
         self.placeholder = placeholder
+        self.normalizeOnSave = normalizeOnSave
         self.onCancel = onCancel
         self.onSave = onSave
     }
@@ -233,7 +238,7 @@ public struct RichTextEditorSheet: View {
     }
 
     private func performSave() {
-        let committedHTML = draftStore.commit()
+        let committedHTML = draftStore.commit(normalizingWith: normalizeOnSave)
         htmlContent = committedHTML
         if let navigationTitleBinding {
             navigationTitleBinding.wrappedValue = draftTitle
@@ -309,9 +314,15 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
         }
     }
 
-    func commit() -> String {
+    func beginTrackingEditsForTests() {
         beginTrackingTask?.cancel()
-        return draftHTMLContent
+        originalHTMLContent = draftHTMLContent
+        isTrackingEdits = true
+    }
+
+    func commit(normalizingWith normalize: (String) -> String = { $0 }) -> String {
+        beginTrackingTask?.cancel()
+        return normalize(draftHTMLContent)
     }
 
     func cancel() {

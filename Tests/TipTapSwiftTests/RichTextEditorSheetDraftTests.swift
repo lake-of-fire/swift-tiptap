@@ -29,6 +29,7 @@ import Testing
     let original = "<p>Original</p>"
     let store = RichTextEditorSheetDraftStore(htmlContent: original)
 
+    store.beginTrackingEditsForTests()
     store.draftHTMLContent = "<p>First edit</p>"
     store.draftHTMLContent = "<p>Final edit</p>"
 
@@ -38,6 +39,20 @@ import Testing
     #expect(store.originalHTMLContent == original)
     #expect(store.draftHTMLContent == "<p>Final edit</p>")
     #expect(store.hasEdits == true)
+}
+
+@MainActor
+@Test func commitCanNormalizeEditorBoilerplateHTMLForPlainTextFields() {
+    let store = RichTextEditorSheetDraftStore(htmlContent: "plain definition")
+
+    store.syncFromEditor("<p>plain definition</p>")
+
+    let committed = store.commit(normalizingWith: { html in
+        html == "<p>plain definition</p>" ? "plain definition" : html
+    })
+
+    #expect(committed == "plain definition")
+    #expect(store.draftHTMLContent == "<p>plain definition</p>")
 }
 
 @MainActor
@@ -56,6 +71,7 @@ import Testing
     let store = RichTextEditorSheetDraftStore(htmlContent: "")
 
     store.syncFromEditor("<p></p>")
+    store.beginTrackingEditsForTests()
     store.syncFromEditor("<p>Hello</p>")
 
     #expect(store.originalHTMLContent == "<p></p>")
