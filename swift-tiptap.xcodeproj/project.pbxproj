@@ -1,0 +1,580 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 55;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		11441A4208D4E7EA82DFED2C /* HTMLContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD11F587A082B0BD2B645D8 /* HTMLContentView.swift */; };
+		1352A67857DCA022BDB88618 /* TuistBundle+TipTapSwift.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFB7BBD1AA2D5A4F4BEE62C /* TuistBundle+TipTapSwift.swift */; };
+		144C6114A751A7E406A589D2 /* RichTextEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556B519A79900EBF964E5105 /* RichTextEditorView.swift */; };
+		1D116021D4D9E3971CA1334B /* RichTextEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53B0D6979F95B637F51FCC40 /* RichTextEditorSheet.swift */; };
+		5008E98C4E340173C71D666D /* HTMLPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2C4CB7EA26E69EF43DF30C /* HTMLPreviewView.swift */; };
+		698F41562B9B93DB051D216C /* RichTextEditor in Resources */ = {isa = PBXBuildFile; fileRef = C48A790D461625B0053DDD11 /* RichTextEditor */; };
+		8017C97A8E410E700C5C77BE /* String+HTML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53934ADF94A3C38F894E11CB /* String+HTML.swift */; };
+		DCEB830D6E9D15BEC445C151 /* EditorContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F19E06E163B88EB0B0FF1DB /* EditorContext.swift */; };
+		F91DFBFE8FA91199EA1CA989 /* FormattingAccessoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77708C3325027309657183 /* FormattingAccessoryView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CCEFA0DBA686AD3ACB7D380A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 226EB6A16B82E95FD169A7FF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C6C691F40574ABC1B9E96AF4;
+			remoteInfo = "swift-tiptap_TipTapSwift";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		474FC03D2F0AE90E43278D1E /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D291D9B852B4A59BC82EBF10 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0E2C4CB7EA26E69EF43DF30C /* HTMLPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLPreviewView.swift; sourceTree = "<group>"; };
+		1F77708C3325027309657183 /* FormattingAccessoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingAccessoryView.swift; sourceTree = "<group>"; };
+		53934ADF94A3C38F894E11CB /* String+HTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "String+HTML.swift"; sourceTree = "<group>"; };
+		53B0D6979F95B637F51FCC40 /* RichTextEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditorSheet.swift; sourceTree = "<group>"; };
+		556B519A79900EBF964E5105 /* RichTextEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditorView.swift; sourceTree = "<group>"; };
+		6D9609EC9ADCE7916F6FD2B1 /* libTipTapSwift.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libTipTapSwift.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		9F19E06E163B88EB0B0FF1DB /* EditorContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorContext.swift; sourceTree = "<group>"; };
+		A7822D2EE294378D97347CE8 /* swift-tiptap_TipTapSwift-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "swift-tiptap_TipTapSwift-Info.plist"; sourceTree = "<group>"; };
+		BAB9C884D868819EC84B26BF /* swift-tiptap_TipTapSwift.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "swift-tiptap_TipTapSwift.bundle"; sourceTree = BUILT_PRODUCTS_DIR; };
+		BCD11F587A082B0BD2B645D8 /* HTMLContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLContentView.swift; sourceTree = "<group>"; };
+		C48A790D461625B0053DDD11 /* RichTextEditor */ = {isa = PBXFileReference; path = RichTextEditor; sourceTree = "<group>"; };
+		CEFB7BBD1AA2D5A4F4BEE62C /* TuistBundle+TipTapSwift.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TuistBundle+TipTapSwift.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5590E135E3E703FA3C8F3E8B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BA155C897FE35F5C0A43BCCA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		55217C9DE1AA10BB2D4E3412 /* Project */ = {
+			isa = PBXGroup;
+			children = (
+				B773230880472C4353F830C1 /* Derived */,
+				57A26E4AB92F62C5F5343F45 /* Sources */,
+			);
+			name = Project;
+			sourceTree = "<group>";
+		};
+		57A26E4AB92F62C5F5343F45 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				5B91A8ACCBBB4CDF99777D45 /* TipTapSwift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		5B91A8ACCBBB4CDF99777D45 /* TipTapSwift */ = {
+			isa = PBXGroup;
+			children = (
+				C337053B5CBD73C09A095DED /* Resources */,
+				9F19E06E163B88EB0B0FF1DB /* EditorContext.swift */,
+				1F77708C3325027309657183 /* FormattingAccessoryView.swift */,
+				BCD11F587A082B0BD2B645D8 /* HTMLContentView.swift */,
+				0E2C4CB7EA26E69EF43DF30C /* HTMLPreviewView.swift */,
+				53B0D6979F95B637F51FCC40 /* RichTextEditorSheet.swift */,
+				556B519A79900EBF964E5105 /* RichTextEditorView.swift */,
+				53934ADF94A3C38F894E11CB /* String+HTML.swift */,
+			);
+			path = TipTapSwift;
+			sourceTree = "<group>";
+		};
+		82249076FF655E98F7DA2EF0 /* InfoPlists */ = {
+			isa = PBXGroup;
+			children = (
+				A7822D2EE294378D97347CE8 /* swift-tiptap_TipTapSwift-Info.plist */,
+			);
+			path = InfoPlists;
+			sourceTree = "<group>";
+		};
+		8B41703AB26EFCD9C056D72C /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				CEFB7BBD1AA2D5A4F4BEE62C /* TuistBundle+TipTapSwift.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		9F829F3D27E2135FE4F4C46A = {
+			isa = PBXGroup;
+			children = (
+				F81D124AB46E1849CB33186B /* Products */,
+				55217C9DE1AA10BB2D4E3412 /* Project */,
+			);
+			sourceTree = "<group>";
+		};
+		B773230880472C4353F830C1 /* Derived */ = {
+			isa = PBXGroup;
+			children = (
+				82249076FF655E98F7DA2EF0 /* InfoPlists */,
+				8B41703AB26EFCD9C056D72C /* Sources */,
+			);
+			path = Derived;
+			sourceTree = "<group>";
+		};
+		C337053B5CBD73C09A095DED /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				C48A790D461625B0053DDD11 /* RichTextEditor */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		F81D124AB46E1849CB33186B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6D9609EC9ADCE7916F6FD2B1 /* libTipTapSwift.a */,
+				BAB9C884D868819EC84B26BF /* swift-tiptap_TipTapSwift.bundle */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		9828DAB08D9986545DC128EB /* TipTapSwift */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 732AE1405B8C7EA7B373F478 /* Build configuration list for PBXNativeTarget "TipTapSwift" */;
+			buildPhases = (
+				AF9301F6559686763007C95E /* Sources */,
+				F05BDE3390B649334D50E87F /* Resources */,
+				BA155C897FE35F5C0A43BCCA /* Frameworks */,
+				D291D9B852B4A59BC82EBF10 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				298CF424CE064B50D49F92BA /* PBXTargetDependency */,
+			);
+			name = TipTapSwift;
+			packageProductDependencies = (
+			);
+			productName = TipTapSwift;
+			productReference = 6D9609EC9ADCE7916F6FD2B1 /* libTipTapSwift.a */;
+			productType = "com.apple.product-type.library.static";
+		};
+		C6C691F40574ABC1B9E96AF4 /* swift-tiptap_TipTapSwift */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AF699D14F4DC00716D30A312 /* Build configuration list for PBXNativeTarget "swift-tiptap_TipTapSwift" */;
+			buildPhases = (
+				259717E3F22DC5D7B996D2D1 /* Sources */,
+				9BCB0A02D4E3272187C1AC18 /* Resources */,
+				5590E135E3E703FA3C8F3E8B /* Frameworks */,
+				474FC03D2F0AE90E43278D1E /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "swift-tiptap_TipTapSwift";
+			packageProductDependencies = (
+			);
+			productName = "swift-tiptap_TipTapSwift";
+			productReference = BAB9C884D868819EC84B26BF /* swift-tiptap_TipTapSwift.bundle */;
+			productType = "com.apple.product-type.bundle";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		226EB6A16B82E95FD169A7FF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 9999;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 58E887A6958039B15275FBEA /* Build configuration list for PBXProject "swift-tiptap" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9F829F3D27E2135FE4F4C46A;
+			productRefGroup = F81D124AB46E1849CB33186B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9828DAB08D9986545DC128EB /* TipTapSwift */,
+				C6C691F40574ABC1B9E96AF4 /* swift-tiptap_TipTapSwift */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9BCB0A02D4E3272187C1AC18 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				698F41562B9B93DB051D216C /* RichTextEditor in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F05BDE3390B649334D50E87F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		259717E3F22DC5D7B996D2D1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF9301F6559686763007C95E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1352A67857DCA022BDB88618 /* TuistBundle+TipTapSwift.swift in Sources */,
+				DCEB830D6E9D15BEC445C151 /* EditorContext.swift in Sources */,
+				F91DFBFE8FA91199EA1CA989 /* FormattingAccessoryView.swift in Sources */,
+				11441A4208D4E7EA82DFED2C /* HTMLContentView.swift in Sources */,
+				5008E98C4E340173C71D666D /* HTMLPreviewView.swift in Sources */,
+				1D116021D4D9E3971CA1334B /* RichTextEditorSheet.swift in Sources */,
+				144C6114A751A7E406A589D2 /* RichTextEditorView.swift in Sources */,
+				8017C97A8E410E700C5C77BE /* String+HTML.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		298CF424CE064B50D49F92BA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = "swift-tiptap_TipTapSwift";
+			target = C6C691F40574ABC1B9E96AF4 /* swift-tiptap_TipTapSwift */;
+			targetProxy = CCEFA0DBA686AD3ACB7D380A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		24EA5557446B0E5975D6EBAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_MASTER_OBJECT_FILE = NO;
+				INFOPLIST_FILE = "Derived/InfoPlists/swift-tiptap_TipTapSwift-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tuist.TipTapSwift.generated.resources;
+				PRODUCT_NAME = "swift-tiptap_TipTapSwift";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
+					"$(inherited)",
+					DEBUG,
+				);
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "";
+			};
+			name = Debug;
+		};
+		2AF86862965E52546B4CDA42 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PLATFORM_DIR)/Developer/Library/Frameworks",
+				);
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SWIFT_PACKAGE=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_INHIBIT_ALL_WARNINGS = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-package-name",
+					"swift-tiptap",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
+					"$(inherited)",
+					SWIFT_PACKAGE,
+				);
+				SWIFT_SUPPRESS_WARNINGS = YES;
+				USE_HEADERMAP = NO;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		2E1DE571C11E0EFA1EB53141 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				EXECUTABLE_PREFIX = lib;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_LDFLAGS = "-ObjC";
+				OTHER_SWIFT_FLAGS = "$(inherited)";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tuist.TipTapSwift;
+				PRODUCT_NAME = TipTapSwift;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
+					"$(inherited)",
+					DEBUG,
+				);
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8563DB3462959A2ECB8C4852 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_MASTER_OBJECT_FILE = NO;
+				INFOPLIST_FILE = "Derived/InfoPlists/swift-tiptap_TipTapSwift-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tuist.TipTapSwift.generated.resources;
+				PRODUCT_NAME = "swift-tiptap_TipTapSwift";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "";
+			};
+			name = Release;
+		};
+		85957F1EE8F2B5D8D7277493 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = NO;
+				ENABLE_TESTABILITY = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PLATFORM_DIR)/Developer/Library/Frameworks",
+				);
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+					"SWIFT_PACKAGE=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_INHIBIT_ALL_WARNINGS = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-package-name",
+					"swift-tiptap",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
+					"$(inherited)",
+					SWIFT_PACKAGE,
+				);
+				SWIFT_SUPPRESS_WARNINGS = YES;
+				USE_HEADERMAP = NO;
+			};
+			name = Debug;
+		};
+		C8DDEA40C0079A43EAF2BDCB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				EXECUTABLE_PREFIX = lib;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_LDFLAGS = "-ObjC";
+				OTHER_SWIFT_FLAGS = "$(inherited)";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tuist.TipTapSwift;
+				PRODUCT_NAME = TipTapSwift;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		58E887A6958039B15275FBEA /* Build configuration list for PBXProject "swift-tiptap" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				85957F1EE8F2B5D8D7277493 /* Debug */,
+				2AF86862965E52546B4CDA42 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		732AE1405B8C7EA7B373F478 /* Build configuration list for PBXNativeTarget "TipTapSwift" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2E1DE571C11E0EFA1EB53141 /* Debug */,
+				C8DDEA40C0079A43EAF2BDCB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AF699D14F4DC00716D30A312 /* Build configuration list for PBXNativeTarget "swift-tiptap_TipTapSwift" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				24EA5557446B0E5975D6EBAD /* Debug */,
+				8563DB3462959A2ECB8C4852 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 226EB6A16B82E95FD169A7FF /* Project object */;
+}
