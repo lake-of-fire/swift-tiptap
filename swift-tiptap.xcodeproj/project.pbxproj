@@ -7,26 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		11441A4208D4E7EA82DFED2C /* HTMLContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD11F587A082B0BD2B645D8 /* HTMLContentView.swift */; };
-		1352A67857DCA022BDB88618 /* TuistBundle+TipTapSwift.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFB7BBD1AA2D5A4F4BEE62C /* TuistBundle+TipTapSwift.swift */; };
-		144C6114A751A7E406A589D2 /* RichTextEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556B519A79900EBF964E5105 /* RichTextEditorView.swift */; };
-		1D116021D4D9E3971CA1334B /* RichTextEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53B0D6979F95B637F51FCC40 /* RichTextEditorSheet.swift */; };
-		5008E98C4E340173C71D666D /* HTMLPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2C4CB7EA26E69EF43DF30C /* HTMLPreviewView.swift */; };
 		698F41562B9B93DB051D216C /* RichTextEditor in Resources */ = {isa = PBXBuildFile; fileRef = C48A790D461625B0053DDD11 /* RichTextEditor */; };
-		8017C97A8E410E700C5C77BE /* String+HTML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53934ADF94A3C38F894E11CB /* String+HTML.swift */; };
-		DCEB830D6E9D15BEC445C151 /* EditorContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F19E06E163B88EB0B0FF1DB /* EditorContext.swift */; };
-		F91DFBFE8FA91199EA1CA989 /* FormattingAccessoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77708C3325027309657183 /* FormattingAccessoryView.swift */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		CCEFA0DBA686AD3ACB7D380A /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 226EB6A16B82E95FD169A7FF /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = C6C691F40574ABC1B9E96AF4;
-			remoteInfo = "swift-tiptap_TipTapSwift";
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		474FC03D2F0AE90E43278D1E /* Embed Frameworks */ = {
@@ -39,42 +21,16 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D291D9B852B4A59BC82EBF10 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		0E2C4CB7EA26E69EF43DF30C /* HTMLPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLPreviewView.swift; sourceTree = "<group>"; };
-		1F77708C3325027309657183 /* FormattingAccessoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingAccessoryView.swift; sourceTree = "<group>"; };
-		53934ADF94A3C38F894E11CB /* String+HTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "String+HTML.swift"; sourceTree = "<group>"; };
-		53B0D6979F95B637F51FCC40 /* RichTextEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditorSheet.swift; sourceTree = "<group>"; };
-		556B519A79900EBF964E5105 /* RichTextEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditorView.swift; sourceTree = "<group>"; };
-		6D9609EC9ADCE7916F6FD2B1 /* libTipTapSwift.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libTipTapSwift.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		9F19E06E163B88EB0B0FF1DB /* EditorContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorContext.swift; sourceTree = "<group>"; };
 		A7822D2EE294378D97347CE8 /* swift-tiptap_TipTapSwift-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "swift-tiptap_TipTapSwift-Info.plist"; sourceTree = "<group>"; };
 		BAB9C884D868819EC84B26BF /* swift-tiptap_TipTapSwift.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "swift-tiptap_TipTapSwift.bundle"; sourceTree = BUILT_PRODUCTS_DIR; };
-		BCD11F587A082B0BD2B645D8 /* HTMLContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLContentView.swift; sourceTree = "<group>"; };
 		C48A790D461625B0053DDD11 /* RichTextEditor */ = {isa = PBXFileReference; path = RichTextEditor; sourceTree = "<group>"; };
-		CEFB7BBD1AA2D5A4F4BEE62C /* TuistBundle+TipTapSwift.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TuistBundle+TipTapSwift.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		5590E135E3E703FA3C8F3E8B /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		BA155C897FE35F5C0A43BCCA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -105,13 +61,6 @@
 			isa = PBXGroup;
 			children = (
 				C337053B5CBD73C09A095DED /* Resources */,
-				9F19E06E163B88EB0B0FF1DB /* EditorContext.swift */,
-				1F77708C3325027309657183 /* FormattingAccessoryView.swift */,
-				BCD11F587A082B0BD2B645D8 /* HTMLContentView.swift */,
-				0E2C4CB7EA26E69EF43DF30C /* HTMLPreviewView.swift */,
-				53B0D6979F95B637F51FCC40 /* RichTextEditorSheet.swift */,
-				556B519A79900EBF964E5105 /* RichTextEditorView.swift */,
-				53934ADF94A3C38F894E11CB /* String+HTML.swift */,
 			);
 			path = TipTapSwift;
 			sourceTree = "<group>";
@@ -122,14 +71,6 @@
 				A7822D2EE294378D97347CE8 /* swift-tiptap_TipTapSwift-Info.plist */,
 			);
 			path = InfoPlists;
-			sourceTree = "<group>";
-		};
-		8B41703AB26EFCD9C056D72C /* Sources */ = {
-			isa = PBXGroup;
-			children = (
-				CEFB7BBD1AA2D5A4F4BEE62C /* TuistBundle+TipTapSwift.swift */,
-			);
-			path = Sources;
 			sourceTree = "<group>";
 		};
 		9F829F3D27E2135FE4F4C46A = {
@@ -144,7 +85,6 @@
 			isa = PBXGroup;
 			children = (
 				82249076FF655E98F7DA2EF0 /* InfoPlists */,
-				8B41703AB26EFCD9C056D72C /* Sources */,
 			);
 			path = Derived;
 			sourceTree = "<group>";
@@ -160,7 +100,6 @@
 		F81D124AB46E1849CB33186B /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				6D9609EC9ADCE7916F6FD2B1 /* libTipTapSwift.a */,
 				BAB9C884D868819EC84B26BF /* swift-tiptap_TipTapSwift.bundle */,
 			);
 			name = Products;
@@ -169,27 +108,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		9828DAB08D9986545DC128EB /* TipTapSwift */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 732AE1405B8C7EA7B373F478 /* Build configuration list for PBXNativeTarget "TipTapSwift" */;
-			buildPhases = (
-				AF9301F6559686763007C95E /* Sources */,
-				F05BDE3390B649334D50E87F /* Resources */,
-				BA155C897FE35F5C0A43BCCA /* Frameworks */,
-				D291D9B852B4A59BC82EBF10 /* Embed Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				298CF424CE064B50D49F92BA /* PBXTargetDependency */,
-			);
-			name = TipTapSwift;
-			packageProductDependencies = (
-			);
-			productName = TipTapSwift;
-			productReference = 6D9609EC9ADCE7916F6FD2B1 /* libTipTapSwift.a */;
-			productType = "com.apple.product-type.library.static";
-		};
 		C6C691F40574ABC1B9E96AF4 /* swift-tiptap_TipTapSwift */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AF699D14F4DC00716D30A312 /* Build configuration list for PBXNativeTarget "swift-tiptap_TipTapSwift" */;
@@ -234,7 +152,6 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				9828DAB08D9986545DC128EB /* TipTapSwift */,
 				C6C691F40574ABC1B9E96AF4 /* swift-tiptap_TipTapSwift */,
 			);
 		};
@@ -249,13 +166,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F05BDE3390B649334D50E87F /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -266,31 +176,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AF9301F6559686763007C95E /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				1352A67857DCA022BDB88618 /* TuistBundle+TipTapSwift.swift in Sources */,
-				DCEB830D6E9D15BEC445C151 /* EditorContext.swift in Sources */,
-				F91DFBFE8FA91199EA1CA989 /* FormattingAccessoryView.swift in Sources */,
-				11441A4208D4E7EA82DFED2C /* HTMLContentView.swift in Sources */,
-				5008E98C4E340173C71D666D /* HTMLPreviewView.swift in Sources */,
-				1D116021D4D9E3971CA1334B /* RichTextEditorSheet.swift in Sources */,
-				144C6114A751A7E406A589D2 /* RichTextEditorView.swift in Sources */,
-				8017C97A8E410E700C5C77BE /* String+HTML.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		298CF424CE064B50D49F92BA /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = "swift-tiptap_TipTapSwift";
-			target = C6C691F40574ABC1B9E96AF4 /* swift-tiptap_TipTapSwift */;
-			targetProxy = CCEFA0DBA686AD3ACB7D380A /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		24EA5557446B0E5975D6EBAD /* Debug */ = {
@@ -395,33 +281,6 @@
 			};
 			name = Release;
 		};
-		2E1DE571C11E0EFA1EB53141 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				EXECUTABLE_PREFIX = lib;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				OTHER_LDFLAGS = "-ObjC";
-				OTHER_SWIFT_FLAGS = "$(inherited)";
-				PRODUCT_BUNDLE_IDENTIFIER = dev.tuist.TipTapSwift;
-				PRODUCT_NAME = TipTapSwift;
-				SDKROOT = auto;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
-					"$(inherited)",
-					DEBUG,
-				);
-				SWIFT_COMPILATION_MODE = singlefile;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
 		8563DB3462959A2ECB8C4852 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -523,29 +382,6 @@
 			};
 			name = Debug;
 		};
-		C8DDEA40C0079A43EAF2BDCB /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				EXECUTABLE_PREFIX = lib;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				OTHER_LDFLAGS = "-ObjC";
-				OTHER_SWIFT_FLAGS = "$(inherited)";
-				PRODUCT_BUNDLE_IDENTIFIER = dev.tuist.TipTapSwift;
-				PRODUCT_NAME = TipTapSwift;
-				SDKROOT = auto;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -554,15 +390,6 @@
 			buildConfigurations = (
 				85957F1EE8F2B5D8D7277493 /* Debug */,
 				2AF86862965E52546B4CDA42 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		732AE1405B8C7EA7B373F478 /* Build configuration list for PBXNativeTarget "TipTapSwift" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				2E1DE571C11E0EFA1EB53141 /* Debug */,
-				C8DDEA40C0079A43EAF2BDCB /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
