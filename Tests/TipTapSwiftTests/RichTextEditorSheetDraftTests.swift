@@ -29,6 +29,7 @@ import Testing
     let original = "<p>Original</p>"
     let store = RichTextEditorSheetDraftStore(htmlContent: original)
 
+    store.beginTrackingEdits()
     store.draftHTMLContent = "<p>First edit</p>"
     store.draftHTMLContent = "<p>Final edit</p>"
 
@@ -56,6 +57,7 @@ import Testing
     let store = RichTextEditorSheetDraftStore(htmlContent: "")
 
     store.syncFromEditor("<p></p>")
+    store.beginTrackingEdits()
     store.syncFromEditor("<p>Hello</p>")
 
     #expect(store.originalHTMLContent == "<p></p>")

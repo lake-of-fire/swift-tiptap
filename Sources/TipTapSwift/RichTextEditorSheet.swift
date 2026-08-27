@@ -304,9 +304,13 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
         beginTrackingTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
-            originalHTMLContent = draftHTMLContent
-            isTrackingEdits = true
+            beginTrackingEdits()
         }
+    }
+
+    func beginTrackingEdits() {
+        originalHTMLContent = draftHTMLContent
+        isTrackingEdits = true
     }
 
     func commit() -> String {
