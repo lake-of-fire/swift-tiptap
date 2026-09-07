@@ -104,13 +104,14 @@ public struct RichTextEditorSheet: View {
                 placeholder: placeholder,
                 editorContext: editorContext,
                 onEditorReady: {
-                    draftStore.scheduleBeginTrackingEdits()
+                    draftStore.beginTrackingEdits()
                     withAnimation(.easeIn(duration: 0.2)) {
                         isEditorReady = true
                     }
                 }
             )
             .opacity(isEditorReady ? 1 : 0)
+            .allowsHitTesting(isEditorReady)
 
             if !isEditorReady {
                 ProgressView()
@@ -280,7 +281,6 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     private(set) var originalHTMLContent: String
     @Published var draftHTMLContent: String
     private var isTrackingEdits = false
-    private var beginTrackingTask: Task<Void, Never>?
 
     init(htmlContent: String) {
         self.originalHTMLContent = htmlContent
@@ -299,27 +299,17 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
         draftHTMLContent = htmlContent
     }
 
-    func scheduleBeginTrackingEdits() {
-        beginTrackingTask?.cancel()
-        beginTrackingTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return }
-            beginTrackingEdits()
-        }
-    }
-
     func beginTrackingEdits() {
+        guard !isTrackingEdits else { return }
         originalHTMLContent = draftHTMLContent
         isTrackingEdits = true
     }
 
     func commit() -> String {
-        beginTrackingTask?.cancel()
         return draftHTMLContent
     }
 
     func cancel() {
-        beginTrackingTask?.cancel()
         draftHTMLContent = originalHTMLContent
     }
 }

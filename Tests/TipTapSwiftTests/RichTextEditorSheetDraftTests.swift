@@ -64,3 +64,14 @@ import Testing
     #expect(store.draftHTMLContent == "<p>Hello</p>")
     #expect(store.hasEdits == true)
 }
+
+@MainActor
+@Test func firstInteractiveEditIsTrackedImmediately() {
+    let store = RichTextEditorSheetDraftStore(htmlContent: "<p>Original</p>")
+    store.beginTrackingEdits()
+    store.syncFromEditor("<p>Quick edit</p>")
+    store.beginTrackingEdits() // A repeated readiness event cannot absorb the edit.
+    #expect(store.hasEdits)
+    #expect(store.originalHTMLContent == "<p>Original</p>")
+    #expect(store.commit() == "<p>Quick edit</p>")
+}
