@@ -94,7 +94,7 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 get: { store.draftHTMLContent },
                 set: { html in
                     store.syncFromEditor(html)
-                    if html == "<p>Quick edit</p>" { edited.fulfill() }
+                    if html == "<h2>Original</h2><p></p>" { edited.fulfill() }
                 }
             ),
             editorContext: context,
@@ -114,12 +114,12 @@ final class RichTextEditorReadinessTests: XCTestCase {
         XCTAssertEqual(store.originalHTMLContent, "<p>Original</p>")
         XCTAssertFalse(store.hasEdits)
         let webView = try XCTUnwrap(context.webView)
-        webView.evaluateJavaScript("window.webkit.messageHandlers.contentChanged.postMessage('<p>Quick edit</p>'); true") { _, error in
+        webView.evaluateJavaScript("window.toggleHeading(2); true") { _, error in
             XCTAssertNil(error)
         }
         await fulfillment(of: [edited], timeout: 2)
         XCTAssertTrue(store.hasEdits)
-        XCTAssertEqual(store.commit(), "<p>Quick edit</p>")
+        XCTAssertEqual(store.commit(), "<h2>Original</h2><p></p>")
     }
 }
 #endif
