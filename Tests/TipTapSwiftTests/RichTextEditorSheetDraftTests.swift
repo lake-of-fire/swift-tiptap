@@ -43,12 +43,43 @@ import Testing
 
 @MainActor
 @Test func firstEditorSyncBecomesBaselineWithoutCountingAsAnEdit() {
-    let store = RichTextEditorSheetDraftStore(htmlContent: "")
+    let source = "<ruby>漢<rt>かん</rt></ruby>"
+    let normalized = "<p><ruby>漢<rt>かん</rt></ruby></p>"
+    let store = RichTextEditorSheetDraftStore(htmlContent: source)
 
-    store.syncFromEditor("<p></p>")
+    store.syncFromEditor(normalized)
 
-    #expect(store.originalHTMLContent == "<p></p>")
-    #expect(store.draftHTMLContent == "<p></p>")
+    #expect(store.originalHTMLContent == source)
+    #expect(store.draftHTMLContent == normalized)
+    #expect(store.hasEdits == false)
+}
+
+@MainActor
+@Test func unchangedBodyCommitsExactSourceAfterEditorNormalization() {
+    let source = "<ruby>漢<rt>かん</rt></ruby>"
+    let store = RichTextEditorSheetDraftStore(htmlContent: source)
+
+    store.syncFromEditor("<p><ruby>漢<rt>かん</rt></ruby></p>")
+    store.beginTrackingEdits()
+
+    #expect(store.hasEdits == false)
+    #expect(store.commit() == source)
+}
+
+@MainActor
+@Test func cancelRestoresExactSourceAndClearsNormalizedDraftEdit() {
+    let source = "<ruby>漢<rt>かん</rt></ruby>"
+    let store = RichTextEditorSheetDraftStore(htmlContent: source)
+
+    store.syncFromEditor("<p><ruby>漢<rt>かん</rt></ruby></p>")
+    store.beginTrackingEdits()
+    store.syncFromEditor("<p><ruby>漢<rt>かん</rt></ruby>語</p>")
+    #expect(store.hasEdits)
+
+    store.cancel()
+
+    #expect(store.draftHTMLContent == source)
+    #expect(store.commit() == source)
     #expect(store.hasEdits == false)
 }
 
@@ -60,7 +91,7 @@ import Testing
     store.beginTrackingEdits()
     store.syncFromEditor("<p>Hello</p>")
 
-    #expect(store.originalHTMLContent == "<p></p>")
+    #expect(store.originalHTMLContent == "")
     #expect(store.draftHTMLContent == "<p>Hello</p>")
     #expect(store.hasEdits == true)
 }
@@ -87,7 +118,7 @@ final class RichTextEditorReadinessTests: XCTestCase {
     func testHostedEditorNormalizesBeforeReadinessAndTracksImmediateEdit() async throws {
         let ready = expectation(description: "Editor ready after content initialization")
         let edited = expectation(description: "Immediate editor change reaches draft")
-        let store = RichTextEditorSheetDraftStore(htmlContent: "Original")
+        let store = RichTextEditorSheetDraftStore(htmlContent: "<p>Original</p>")
         let context = EditorContext()
         let editor = RichTextEditorView(
             htmlContent: Binding(
@@ -120,6 +151,47 @@ final class RichTextEditorReadinessTests: XCTestCase {
         await fulfillment(of: [edited], timeout: 2)
         XCTAssertTrue(store.hasEdits)
         XCTAssertEqual(store.commit(), "<h2>Original</h2><p></p>")
+    }
+
+    @MainActor
+    func testHostedEditorRoundTripsRubyAndKeepsAdjacentText() async throws {
+        let ready = expectation(description: "Editor ready")
+        let store = RichTextEditorSheetDraftStore(
+            htmlContent: "<p><ruby>漢<rt>かん</rt><rp>(</rp><rp>)</rp></ruby>語</p>"
+        )
+        let context = EditorContext()
+        let editor = RichTextEditorView(
+            htmlContent: Binding(
+                get: { store.draftHTMLContent },
+                set: { store.syncFromEditor($0) }
+            ),
+            editorContext: context,
+            onEditorReady: {
+                store.beginTrackingEdits()
+                ready.fulfill()
+            }
+        )
+        let host = NSHostingView(rootView: editor)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        defer { window.contentView = nil; window.close() }
+        await fulfillment(of: [ready], timeout: 15)
+
+        let content = try await context.webView?.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(content, "<p><ruby>漢<rt>かん</rt><rp>(</rp><rp>)</rp></ruby>語</p>")
+
+        let adjacentText = expectation(description: "Adjacent text survives ruby edit")
+        context.webView?.evaluateJavaScript(
+            "window.setContent('<p><ruby>漢<rt>かん</rt></ruby>語</p>'); window.getContent();"
+        ) { result, error in
+            XCTAssertNil(error)
+            XCTAssertEqual(result as? String, "<p><ruby>漢<rt>かん</rt></ruby>語</p>")
+            adjacentText.fulfill()
+        }
+        await fulfillment(of: [adjacentText], timeout: 2)
     }
 }
 #endif

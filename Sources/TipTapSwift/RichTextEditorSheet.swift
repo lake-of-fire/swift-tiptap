@@ -281,6 +281,7 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     private(set) var originalHTMLContent: String
     @Published var draftHTMLContent: String
     private var isTrackingEdits = false
+    private var editorBaselineHTMLContent: String?
 
     init(htmlContent: String) {
         self.originalHTMLContent = htmlContent
@@ -289,27 +290,28 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
 
     var hasEdits: Bool {
         guard isTrackingEdits else { return false }
-        return draftHTMLContent != originalHTMLContent
+        return draftHTMLContent != (editorBaselineHTMLContent ?? originalHTMLContent)
     }
 
     func syncFromEditor(_ htmlContent: String) {
         if !isTrackingEdits {
-            originalHTMLContent = htmlContent
+            editorBaselineHTMLContent = htmlContent
         }
         draftHTMLContent = htmlContent
     }
 
     func beginTrackingEdits() {
         guard !isTrackingEdits else { return }
-        originalHTMLContent = draftHTMLContent
+        editorBaselineHTMLContent = draftHTMLContent
         isTrackingEdits = true
     }
 
     func commit() -> String {
-        return draftHTMLContent
+        hasEdits ? draftHTMLContent : originalHTMLContent
     }
 
     func cancel() {
         draftHTMLContent = originalHTMLContent
+        editorBaselineHTMLContent = originalHTMLContent
     }
 }
