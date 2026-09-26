@@ -109,13 +109,14 @@ public struct RichTextEditorSheet: View {
                 placeholder: placeholder,
                 editorContext: editorContext,
                 onEditorReady: {
-                    draftStore.scheduleBeginTrackingEdits()
+                    draftStore.beginTrackingEdits()
                     withAnimation(.easeIn(duration: 0.2)) {
                         isEditorReady = true
                     }
                 }
             )
             .opacity(isEditorReady ? 1 : 0)
+            .allowsHitTesting(isEditorReady)
 
             if !isEditorReady {
                 ProgressView()
@@ -285,7 +286,7 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     private(set) var originalHTMLContent: String
     @Published var draftHTMLContent: String
     private var isTrackingEdits = false
-    private var beginTrackingTask: Task<Void, Never>?
+    private var editorBaselineHTMLContent: String?
 
     init(htmlContent: String) {
         self.originalHTMLContent = htmlContent
@@ -294,39 +295,32 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
 
     var hasEdits: Bool {
         guard isTrackingEdits else { return false }
-        return draftHTMLContent != originalHTMLContent
+        return draftHTMLContent != (editorBaselineHTMLContent ?? originalHTMLContent)
     }
 
     func syncFromEditor(_ htmlContent: String) {
         if !isTrackingEdits {
-            originalHTMLContent = htmlContent
+            editorBaselineHTMLContent = htmlContent
         }
         draftHTMLContent = htmlContent
     }
 
-    func scheduleBeginTrackingEdits() {
-        beginTrackingTask?.cancel()
-        beginTrackingTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return }
-            originalHTMLContent = draftHTMLContent
-            isTrackingEdits = true
-        }
-    }
-
-    func beginTrackingEditsForTests() {
-        beginTrackingTask?.cancel()
-        originalHTMLContent = draftHTMLContent
+    func beginTrackingEdits() {
+        guard !isTrackingEdits else { return }
+        editorBaselineHTMLContent = draftHTMLContent
         isTrackingEdits = true
     }
 
+    func beginTrackingEditsForTests() {
+        beginTrackingEdits()
+    }
+
     func commit(normalizingWith normalize: (String) -> String = { $0 }) -> String {
-        beginTrackingTask?.cancel()
-        return normalize(draftHTMLContent)
+        normalize(hasEdits ? draftHTMLContent : originalHTMLContent)
     }
 
     func cancel() {
-        beginTrackingTask?.cancel()
         draftHTMLContent = originalHTMLContent
+        editorBaselineHTMLContent = originalHTMLContent
     }
 }

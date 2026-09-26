@@ -190,19 +190,20 @@ public struct RichTextEditorView {
                 }
 
             case "editorReady":
-                isEditorReady = true
-
+                guard !isEditorReady else { return }
                 let theme = parent.colorScheme == .dark ? "dark" : "light"
                 currentTheme = theme
-                webView?.evaluateJavaScript("window.setTheme('\(theme)')") { _, _ in }
-
-                if let content = pendingContent, !content.isEmpty {
-                    let escaped = RichTextEditorView.escapeForJS(content)
-                    webView?.evaluateJavaScript("window.setContent('\(escaped)')") { _, _ in }
-                    pendingContent = nil
-                }
-
-                Task { @MainActor in
+                let content = pendingContent ?? parent.htmlContent
+                pendingContent = nil
+                let escaped = RichTextEditorView.escapeForJS(content)
+                webView?.evaluateJavaScript("window.setTheme('\(theme)'); window.setContent('\(escaped)'); window.getContent()") { [weak self] result, error in
+                    guard let self, error == nil else { return }
+                    // Normalize once, then track edits before revealing the editor.
+                    if let html = result as? String {
+                        self.lastContentFromJS = html
+                        self.parent.htmlContent = html
+                    }
+                    self.isEditorReady = true
                     self.parent.onEditorReady?()
                 }
 
