@@ -7,7 +7,7 @@ import Foundation
 // MARK: - Swift Bundle Accessor - for SPM
 private class BundleFinder {}
 extension Foundation.Bundle {
-/// Since TipTapSwift is a static library, the bundle containing the resources is copied into the final product.
+/// Since TipTapSwift is a static framework, the bundle containing the resources is copied into the final product.
     nonisolated static let module: Bundle = {
         let bundleName = "swift-tiptap_TipTapSwift"
         let bundleFinderResourceURL = Bundle(for: BundleFinder.self).resourceURL
