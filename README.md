@@ -114,6 +114,23 @@ The pre-built JS bundle includes:
 | **Link** | Clickable links with URL editing |
 | **Placeholder** | Configurable placeholder text |
 
+### Rebuilding the JavaScript bundle
+
+The editor entry point is `WebEditor/src/editor.js`. `WebEditor/package-lock.json`
+locks the TipTap 3.20 dependency graph and esbuild. With Node.js 20 or newer:
+
+```sh
+cd WebEditor
+npm ci --ignore-scripts
+npm run verify
+```
+
+`verify` rebuilds in memory and compares every byte with the committed
+`tiptap-bundle.js`. After changing the entry point or dependencies, run
+`npm run build` and commit the source, lockfile, and generated bundle together.
+The Swift package still loads the committed asset without a Node.js dependency
+at app build or runtime.
+
 ## Architecture
 
 ```
