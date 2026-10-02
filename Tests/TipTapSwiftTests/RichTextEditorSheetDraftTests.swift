@@ -121,8 +121,12 @@ import Testing
     #expect(store.commit() == "<p>Quick edit</p>")
 }
 
+#if os(macOS) || os(iOS)
 #if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 import WebKit
 import XCTest
@@ -148,6 +152,7 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 ready.fulfill()
             }
         )
+        #if os(macOS)
         let host = NSHostingView(rootView: editor)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
             styleMask: [.borderless], backing: .buffered, defer: false)
@@ -155,6 +160,28 @@ final class RichTextEditorReadinessTests: XCTestCase {
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         defer { window.contentView = nil; window.close() }
+        #else
+        // Package-shaped XCTest runners do not install a scene delegate. Their
+        // UIKit window still mounts the real hosting controller and WKWebView.
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let previousKeyWindow = scene?.windows.first(where: \.isKeyWindow)
+        let window: UIWindow
+        if let scene {
+            window = UIWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 500, height: 300))
+        }
+        let host = UIHostingController(rootView: editor)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousKeyWindow?.makeKey()
+        }
+        #endif
         await fulfillment(of: [ready], timeout: 15)
         XCTAssertEqual(store.originalHTMLContent, "<p>Original</p>")
         XCTAssertFalse(store.hasEdits)
@@ -185,6 +212,7 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 ready.fulfill()
             }
         )
+        #if os(macOS)
         let host = NSHostingView(rootView: editor)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
             styleMask: [.borderless], backing: .buffered, defer: false)
@@ -192,6 +220,28 @@ final class RichTextEditorReadinessTests: XCTestCase {
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         defer { window.contentView = nil; window.close() }
+        #else
+        // Package-shaped XCTest runners do not install a scene delegate. Their
+        // UIKit window still mounts the real hosting controller and WKWebView.
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let previousKeyWindow = scene?.windows.first(where: \.isKeyWindow)
+        let window: UIWindow
+        if let scene {
+            window = UIWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 500, height: 300))
+        }
+        let host = UIHostingController(rootView: editor)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousKeyWindow?.makeKey()
+        }
+        #endif
         await fulfillment(of: [ready], timeout: 15)
 
         let content = try await context.webView?.evaluateJavaScript("window.getContent()") as? String
