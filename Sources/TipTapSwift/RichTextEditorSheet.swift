@@ -131,6 +131,7 @@ public struct RichTextEditorSheet: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 cancelButton
+                    .accessibilityIdentifier("RichTextEditor.Cancel")
             }
             ToolbarItem(placement: .principal) {
                 if navigationTitleBinding != nil {
@@ -140,12 +141,14 @@ public struct RichTextEditorSheet: View {
                                 .font(.headline)
                                 .lineLimit(1)
                             RenameButton()
+                                .accessibilityIdentifier("RichTextEditor.Rename")
                         }
                     }
                 }
             }
             ToolbarItem(placement: .confirmationAction) {
                 doneButton
+                    .accessibilityIdentifier("RichTextEditor.Save")
             }
         }
         .confirmationDialog("Discard Changes?", isPresented: $isPresentingDiscardConfirmation, titleVisibility: .visible) {
