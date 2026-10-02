@@ -161,10 +161,17 @@ final class RichTextEditorReadinessTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         defer { window.contentView = nil; window.close() }
         #else
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.frame = scene.coordinateSpace.bounds
+        // Package-shaped XCTest runners do not install a scene delegate. Their
+        // UIKit window still mounts the real hosting controller and WKWebView.
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let previousKeyWindow = scene?.windows.first(where: \.isKeyWindow)
+        let window: UIWindow
+        if let scene {
+            window = UIWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 500, height: 300))
+        }
         let host = UIHostingController(rootView: editor)
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -214,10 +221,17 @@ final class RichTextEditorReadinessTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         defer { window.contentView = nil; window.close() }
         #else
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.frame = scene.coordinateSpace.bounds
+        // Package-shaped XCTest runners do not install a scene delegate. Their
+        // UIKit window still mounts the real hosting controller and WKWebView.
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let previousKeyWindow = scene?.windows.first(where: \.isKeyWindow)
+        let window: UIWindow
+        if let scene {
+            window = UIWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 500, height: 300))
+        }
         let host = UIHostingController(rootView: editor)
         window.rootViewController = host
         window.makeKeyAndVisible()
