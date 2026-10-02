@@ -1,0 +1,27 @@
+name: Qualify canonical swift-tiptap for Reader
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/qualify-reader-main.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record exact revision
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          swift --version
+          xcodebuild -version
+      - name: Test Debug
+        run: swift test -c debug
+      - name: Test Release
+        run: swift test -c release
