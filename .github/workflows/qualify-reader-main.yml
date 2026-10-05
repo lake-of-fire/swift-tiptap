@@ -9,19 +9,36 @@ permissions:
   contents: read
 jobs:
   package:
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [debug, release]
     runs-on: macos-15
     timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Record exact revision
+      - name: Verify SDK and record exact revision
+        shell: bash
         run: |
           set -euo pipefail
+          if [ ! -d "$DEVELOPER_DIR" ]; then
+            printf 'Required Xcode 26.3 is unavailable at %s\n' "$DEVELOPER_DIR" >&2
+            exit 1
+          fi
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          if [ "${sdk_version%%.*}" -lt 26 ]; then
+            printf 'Required macOS SDK 26 or newer; selected SDK is %s\n' "$sdk_version" >&2
+            exit 1
+          fi
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
-          swift --version
-          xcodebuild -version
-      - name: Test Debug
-        run: swift test -c debug
-      - name: Test Release
-        run: swift test -c release
+          git rev-parse HEAD 'HEAD^{tree}'
+          xcrun --find swift
+          xcrun swift --version
+          xcrun --sdk macosx --show-sdk-path
+          printf 'macOS SDK version: %s\n' "$sdk_version"
+      - name: Test ${{ matrix.configuration }}
+        run: xcrun swift test -c ${{ matrix.configuration }}
