@@ -80,7 +80,7 @@ public struct RichTextEditorView {
         if let editorContext {
             let accessoryView = FormattingAccessoryView(context: editorContext)
             coordinator.accessoryView = accessoryView
-            Self.installInputAccessoryView(accessoryView, on: webView)
+            Self.installInputAccessoryView(coordinator, on: webView)
         }
         #else
         editorContext?.webView = webView
@@ -98,6 +98,17 @@ public struct RichTextEditorView {
 
     @MainActor
     private func applyContentIfNeeded(in webView: WKWebView, coordinator: Coordinator) {
+        if coordinator.parent.editorContext !== editorContext {
+            if coordinator.parent.editorContext?.webView === webView {
+                coordinator.parent.editorContext?.webView = nil
+            }
+            editorContext?.webView = webView
+            #if canImport(UIKit)
+            coordinator.accessoryView = editorContext.map { FormattingAccessoryView(context: $0) }
+            Self.installInputAccessoryView(coordinator, on: webView)
+            #endif
+        }
+        coordinator.parent = self
         let theme = colorScheme == .dark ? "dark" : "light"
         if coordinator.currentTheme != theme {
             coordinator.currentTheme = theme
@@ -126,27 +137,32 @@ public struct RichTextEditorView {
     /// Replaces WKWebView's default input accessory view by dynamically subclassing WKContentView.
     /// This is the standard approach used by production rich text editors on iOS.
     @MainActor
-    private static func installInputAccessoryView(_ accessoryView: UIView, on webView: WKWebView) {
+    private static func installInputAccessoryView(_ coordinator: Coordinator, on webView: WKWebView) {
         guard let contentView = webView.scrollView.subviews.first(where: {
-            NSStringFromClass(type(of: $0)).hasPrefix("WKContent")
+            let name = NSStringFromClass(type(of: $0))
+            return name.hasPrefix("WKContent") || name.hasPrefix("_TipTapContent_")
         }) else { return }
 
         let contentViewClass: AnyClass = type(of: contentView)
         let customClassName = "_TipTapContent_\(UInt(bitPattern: ObjectIdentifier(contentView)))"
 
+        let selector = #selector(getter: UIResponder.inputAccessoryView)
+        guard let method = class_getInstanceMethod(UIResponder.self, selector) else { return }
+        let typeEncoding = method_getTypeEncoding(method)
+        let block: @convention(block) (AnyObject) -> UIView? = { [weak coordinator] _ in
+            MainActor.assumeIsolated { coordinator?.accessoryView }
+        }
         let customClass: AnyClass
         if let existingClass = objc_lookUpClass(customClassName) {
             customClass = existingClass
+            // Class names can survive a deallocated content view whose address
+            // is reused. Refresh the weak coordinator as well as the accessory.
+            let imp = imp_implementationWithBlock(block)
+            if let previous = class_replaceMethod(customClass, selector, imp, typeEncoding) {
+                imp_removeBlock(previous)
+            }
         } else {
             guard let newClass = objc_allocateClassPair(contentViewClass, customClassName, 0) else { return }
-
-            let selector = #selector(getter: UIResponder.inputAccessoryView)
-            guard let method = class_getInstanceMethod(UIResponder.self, selector) else { return }
-            let typeEncoding = method_getTypeEncoding(method)
-
-            let block: @convention(block) (AnyObject) -> UIView? = { [weak accessoryView] _ in
-                accessoryView
-            }
             let imp = imp_implementationWithBlock(block)
             class_addMethod(newClass, selector, imp, typeEncoding)
             objc_registerClassPair(newClass)
@@ -154,6 +170,7 @@ public struct RichTextEditorView {
         }
 
         object_setClass(contentView, customClass)
+        contentView.reloadInputViews()
     }
     #endif
 
@@ -167,51 +184,62 @@ public struct RichTextEditorView {
         var lastContentFromJS: String = ""
         var isEditorReady = false
         var currentTheme: String?
-        private var pendingContent: String?
+        private var isInitializingEditor = false
 
         init(_ parent: RichTextEditorView) {
             self.parent = parent
-            if !parent.htmlContent.isEmpty {
-                self.pendingContent = parent.htmlContent
-            }
         }
 
         public func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
+            guard let webView, message.webView === webView, message.frameInfo.isMainFrame else { return }
             switch message.name {
             case "contentChanged":
-                if let html = message.body as? String {
+                // Initialization publishes its normalized result once, before readiness.
+                // TipTap can also emit contentChanged while setContent is in flight.
+                if isEditorReady, let html = message.body as? String {
                     lastContentFromJS = html
-                    Task { @MainActor in
-                        self.parent.htmlContent = html
-                    }
+                    parent.htmlContent = html
                 }
 
             case "editorReady":
-                guard !isEditorReady else { return }
-                let theme = parent.colorScheme == .dark ? "dark" : "light"
-                currentTheme = theme
-                let content = pendingContent ?? parent.htmlContent
-                pendingContent = nil
-                let escaped = RichTextEditorView.escapeForJS(content)
-                webView?.evaluateJavaScript("window.setTheme('\(theme)'); window.setContent('\(escaped)'); window.getContent()") { [weak self] result, error in
-                    guard let self, error == nil else { return }
-                    // Normalize once, then track edits before revealing the editor.
-                    if let html = result as? String {
-                        self.lastContentFromJS = html
-                        self.parent.htmlContent = html
-                    }
-                    self.isEditorReady = true
-                    self.parent.onEditorReady?()
-                }
+                guard !isEditorReady, !isInitializingEditor else { return }
+                initializeEditor()
 
             case "editorHeightChanged":
                 break
 
             default:
                 break
+            }
+        }
+
+        private func initializeEditor() {
+            guard let webView else { return }
+            isInitializingEditor = true
+            let theme = parent.colorScheme == .dark ? "dark" : "light"
+            currentTheme = theme
+            let content = parent.htmlContent
+            let escaped = RichTextEditorView.escapeForJS(content)
+            webView.evaluateJavaScript("window.setTheme('\(theme)'); window.setContent('\(escaped)'); window.getContent()") { [weak self, weak webView] result, error in
+                guard let self, let webView, self.webView === webView else { return }
+                self.isInitializingEditor = false
+                guard error == nil else { return }
+                // The binding may change while WebKit initializes. Never replace its
+                // newer value with the normalization of the previous content.
+                guard self.parent.htmlContent == content else {
+                    self.initializeEditor()
+                    return
+                }
+                if let html = result as? String {
+                    self.lastContentFromJS = html
+                    self.parent.htmlContent = html
+                }
+                guard self.webView === webView else { return }
+                self.isEditorReady = true
+                self.parent.onEditorReady?()
             }
         }
 
@@ -255,6 +283,9 @@ extension RichTextEditorView: UIViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentChanged")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorReady")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorHeightChanged")
+        if coordinator.parent.editorContext?.webView === webView {
+            coordinator.parent.editorContext?.webView = nil
+        }
         coordinator.webView = nil
         coordinator.accessoryView = nil
     }
@@ -285,6 +316,9 @@ extension RichTextEditorView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentChanged")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorReady")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorHeightChanged")
+        if coordinator.parent.editorContext?.webView === webView {
+            coordinator.parent.editorContext?.webView = nil
+        }
         coordinator.webView = nil
     }
 }

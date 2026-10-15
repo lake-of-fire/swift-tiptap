@@ -146,6 +146,7 @@ public struct HTMLContentView {
 
     // MARK: - Coordinator
 
+    @MainActor
     public final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, @unchecked Sendable {
         var parent: HTMLContentView
         var webView: WKWebView?
@@ -158,10 +159,9 @@ public struct HTMLContentView {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
+            guard let webView, message.webView === webView, message.frameInfo.isMainFrame else { return }
             if message.name == "heightChanged", let height = message.body as? CGFloat {
-                Task { @MainActor in
-                    self.parent.contentHeight = height
-                }
+                parent.contentHeight = height
             }
         }
 
@@ -202,6 +202,7 @@ extension HTMLContentView: UIViewRepresentable {
     }
 
     public func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.parent = self
         loadContent(in: webView)
     }
 
@@ -226,6 +227,7 @@ extension HTMLContentView: NSViewRepresentable {
     }
 
     public func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.parent = self
         loadContent(in: webView)
     }
 
