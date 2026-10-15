@@ -7,6 +7,7 @@
 
 import SwiftUI
 import WebKit
+import Foundation
 
 #if canImport(UIKit)
 import UIKit
@@ -56,14 +57,14 @@ public struct HTMLContentView {
         coordinator.webView = webView
     }
 
-    private func loadContent(in webView: WKWebView) {
+    private func loadContent(in webView: WKWebView, coordinator: Coordinator) {
+        coordinator.parent = self
         let theme = colorScheme == .dark ? "dark" : "light"
-        let html = Self.wrapHTML(htmlContent, theme: theme)
-        webView.loadHTMLString(html, baseURL: nil)
+        coordinator.loadContentIfNeeded(htmlContent, theme: theme, in: webView)
     }
 
     // swiftlint:disable function_body_length
-    private static func wrapHTML(_ content: String, theme: String) -> String {
+    private static func wrapHTML(_ content: String, theme: String, generation: String) -> String {
         """
         <!DOCTYPE html>
         <html data-theme="\(theme)">
@@ -133,7 +134,9 @@ public struct HTMLContentView {
         <script>
         function reportHeight() {
             var height = document.body.scrollHeight;
-            window.webkit.messageHandlers.heightChanged.postMessage(height);
+            window.webkit.messageHandlers.heightChanged.postMessage({
+                generation: '\(generation)', height: height
+            });
         }
         new ResizeObserver(reportHeight).observe(document.body);
         reportHeight();
@@ -150,9 +153,41 @@ public struct HTMLContentView {
     public final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, @unchecked Sendable {
         var parent: HTMLContentView
         var webView: WKWebView?
+        private var renderGeneration: String?
+        private var renderedContent: String?
+        private var renderedTheme: String?
+        private var lastReportedHeight: CGFloat?
 
         init(_ parent: HTMLContentView) {
             self.parent = parent
+        }
+
+        func loadContentIfNeeded(_ content: String, theme: String, in webView: WKWebView) {
+            guard self.webView === webView else { return }
+            if renderGeneration != nil, renderedContent == content, renderedTheme == theme {
+                if let lastReportedHeight, parent.contentHeight != lastReportedHeight {
+                    // A replacement binding needs the live height even when the
+                    // document is unchanged. WebKit delivers asynchronously, so
+                    // SwiftUI's update does not synchronously mutate its binding.
+                    webView.evaluateJavaScript("window.reportHeight?.()") { _, _ in }
+                }
+                return
+            }
+            // Retire the previous document before starting its replacement.
+            let generation = UUID().uuidString
+            renderGeneration = generation
+            lastReportedHeight = nil
+            renderedContent = content
+            renderedTheme = theme
+            let html = HTMLContentView.wrapHTML(content, theme: theme, generation: generation)
+            webView.loadHTMLString(html, baseURL: nil)
+        }
+
+        func retireRender() {
+            renderGeneration = nil
+            renderedContent = nil
+            renderedTheme = nil
+            lastReportedHeight = nil
         }
 
         public func userContentController(
@@ -160,9 +195,13 @@ public struct HTMLContentView {
             didReceive message: WKScriptMessage
         ) {
             guard let webView, message.webView === webView, message.frameInfo.isMainFrame else { return }
-            if message.name == "heightChanged", let height = message.body as? CGFloat {
-                parent.contentHeight = height
-            }
+            guard message.name == "heightChanged",
+                  let payload = message.body as? [String: Any],
+                  let generation = payload["generation"] as? String,
+                  generation == renderGeneration,
+                  let height = payload["height"] as? CGFloat else { return }
+            lastReportedHeight = height
+            parent.contentHeight = height
         }
 
         public func webView(
@@ -196,18 +235,18 @@ extension HTMLContentView: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         configureWebView(webView, coordinator: context.coordinator)
-        loadContent(in: webView)
+        loadContent(in: webView, coordinator: context.coordinator)
 
         return webView
     }
 
     public func updateUIView(_ webView: WKWebView, context: Context) {
-        context.coordinator.parent = self
-        loadContent(in: webView)
+        loadContent(in: webView, coordinator: context.coordinator)
     }
 
     public static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightChanged")
+        coordinator.retireRender()
         coordinator.webView = nil
     }
 }
@@ -221,18 +260,18 @@ extension HTMLContentView: NSViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         configureWebView(webView, coordinator: context.coordinator)
-        loadContent(in: webView)
+        loadContent(in: webView, coordinator: context.coordinator)
 
         return webView
     }
 
     public func updateNSView(_ webView: WKWebView, context: Context) {
-        context.coordinator.parent = self
-        loadContent(in: webView)
+        loadContent(in: webView, coordinator: context.coordinator)
     }
 
     public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightChanged")
+        coordinator.retireRender()
         coordinator.webView = nil
     }
 }

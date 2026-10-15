@@ -309,9 +309,8 @@ final class RichTextEditorReadinessTests: XCTestCase {
 
     @MainActor
     func testHTMLContentRejectsForeignAndRetainedHeightMessages() async throws {
-        let (webView, messages) = try await captureBridgeMessages()
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 500, height: 300))
         defer { webView.stopLoading() }
-        let message = try XCTUnwrap(messages.first { $0.name == "heightChanged" })
         var height: CGFloat = 10
         var heightDelivery: (() -> Void)?
         let coordinator = HTMLContentView(htmlContent: "<p>Current</p>",
@@ -320,6 +319,8 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 heightDelivery?()
             })
         ).makeCoordinator()
+        coordinator.webView = webView
+        let message = try await captureRenderedHeight(in: webView, coordinator: coordinator, height: 400)
         let owner = WKWebView(frame: .zero)
         coordinator.webView = owner
         let foreignWrite = expectation(description: "Foreign height is ignored")
@@ -334,7 +335,7 @@ final class RichTextEditorReadinessTests: XCTestCase {
         heightDelivery = { liveWrite.fulfill() }
         coordinator.userContentController(webView.configuration.userContentController, didReceive: message)
         await fulfillment(of: [liveWrite], timeout: 2)
-        XCTAssertEqual(height, 123, "The live original WebView still publishes its height")
+        XCTAssertEqual(height, 400, "The live original WebView still publishes its height")
         #if os(macOS)
         HTMLContentView.dismantleNSView(webView, coordinator: coordinator)
         #else
@@ -373,11 +374,14 @@ final class RichTextEditorReadinessTests: XCTestCase {
         ).makeCoordinator()
         editor.webView = webView
         renderer.webView = webView
+        let currentHeight = try await captureRenderedHeight(in: webView, coordinator: renderer, height: 400)
+        let childHeight = try await captureChildFrameHeight(currentHeight.body, in: webView)
+        XCTAssertFalse(childHeight.frameInfo.isMainFrame)
+        XCTAssertTrue(childHeight.webView === webView)
         editor.isEditorReady = true
         editor.userContentController(webView.configuration.userContentController,
             didReceive: try XCTUnwrap(messages.first { $0.name == "contentChanged" }))
-        renderer.userContentController(webView.configuration.userContentController,
-            didReceive: try XCTUnwrap(messages.first { $0.name == "heightChanged" }))
+        renderer.userContentController(webView.configuration.userContentController, didReceive: childHeight)
         editor.isEditorReady = false
         editor.userContentController(webView.configuration.userContentController,
             didReceive: try XCTUnwrap(messages.first { $0.name == "editorReady" }))
@@ -386,6 +390,132 @@ final class RichTextEditorReadinessTests: XCTestCase {
         XCTAssertEqual(height, 10)
         XCTAssertFalse(editor.isEditorReady)
         XCTAssertNil(editor.currentTheme)
+    }
+
+    @MainActor
+    func testHTMLContentRejectsPreviousDocumentHeightInReusedWebView() async throws {
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 500, height: 300))
+        defer { webView.stopLoading() }
+        var original: CGFloat = 0
+        var replacement: CGFloat = 0
+        let coordinator = HTMLContentView(htmlContent: "",
+            contentHeight: Binding(get: { original }, set: { original = $0 })
+        ).makeCoordinator()
+        coordinator.webView = webView
+        let first = try await captureRenderedHeight(in: webView, coordinator: coordinator, height: 400)
+        coordinator.userContentController(webView.configuration.userContentController, didReceive: first)
+        XCTAssertEqual(original, 400)
+        let firstGeneration = try XCTUnwrap((first.body as? [String: Any])?["generation"] as? String)
+
+        coordinator.parent = HTMLContentView(htmlContent: "",
+            contentHeight: Binding(get: { replacement }, set: { replacement = $0 }))
+        let second = try await captureRenderedHeight(in: webView, coordinator: coordinator,
+            height: 600, excludingGeneration: firstGeneration, afterLoad: {
+                coordinator.userContentController(webView.configuration.userContentController, didReceive: first)
+                XCTAssertEqual(replacement, 0, "Reload must retire the old generation before WebKit completes")
+            })
+        XCTAssertTrue(first.webView === second.webView)
+        XCTAssertTrue(first.frameInfo.isMainFrame && second.frameInfo.isMainFrame)
+        coordinator.userContentController(webView.configuration.userContentController, didReceive: first)
+        XCTAssertEqual(replacement, 0, "A queued height from the previous document cannot reach the new binding")
+        coordinator.userContentController(webView.configuration.userContentController, didReceive: second)
+        XCTAssertEqual(replacement, 600)
+        XCTAssertEqual(original, 400)
+
+        // A theme-only reload also replaces the document and its height generation.
+        let secondGeneration = try XCTUnwrap((second.body as? [String: Any])?["generation"] as? String)
+        let third = try await captureRenderedHeight(in: webView, coordinator: coordinator,
+            height: 600, theme: "dark", excludingGeneration: secondGeneration)
+        replacement = 0
+        coordinator.userContentController(webView.configuration.userContentController, didReceive: second)
+        XCTAssertEqual(replacement, 0)
+        coordinator.userContentController(webView.configuration.userContentController, didReceive: third)
+        XCTAssertEqual(replacement, 600)
+
+        replacement = 0
+        coordinator.loadContentIfNeeded("<p style='height: 600px'>Measured</p>", theme: "dark", in: webView)
+        coordinator.userContentController(webView.configuration.userContentController, didReceive: third)
+        XCTAssertEqual(replacement, 600, "An identical render must retain its valid generation")
+        coordinator.retireRender()
+        replacement = 0
+        coordinator.userContentController(webView.configuration.userContentController, didReceive: third)
+        XCTAssertEqual(replacement, 0, "Retirement invalidates the envelope even while the WebView is retained")
+    }
+
+    @MainActor
+    func testHostedHTMLContentKeepsDocumentAcrossHeightOnlyUpdates() async throws {
+        let ready = expectation(description: "Initial rendered height")
+        var height: CGFloat = 0
+        let html = "<p style='height: 400px'>Measured</p>"
+        let binding = Binding(get: { height }, set: { value in
+            if height == 0 && value > 0 { ready.fulfill() }
+            height = value
+        })
+        let mounted = MountedEditorView(HTMLContentView(htmlContent: html, contentHeight: binding))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(mounted.webView)
+        _ = try await webView.evaluateJavaScript("window.heightDocumentMarker = 'original'; true")
+        let delivered = expectation(description: "Existing document reports to replacement height binding")
+        var replacement: CGFloat = 0
+        var didDeliver = false
+        mounted.replace(HTMLContentView(htmlContent: html,
+            contentHeight: Binding(get: { replacement }, set: {
+                replacement = $0
+                if !didDeliver {
+                    didDeliver = true
+                    delivered.fulfill()
+                }
+            })))
+        // Production must request a measurement for the new binding; the test
+        // never calls reportHeight or changes the unchanged document's layout.
+        await fulfillment(of: [delivered], timeout: 5)
+        let marker = try await webView.evaluateJavaScript("window.heightDocumentMarker") as? String
+        XCTAssertEqual(marker, "original", "Identical HTML/theme must retain the current document")
+        XCTAssertEqual(replacement, 400)
+        XCTAssertTrue(mounted.webView === webView)
+    }
+
+    @MainActor
+    private func captureRenderedHeight(in webView: WKWebView, coordinator: HTMLContentView.Coordinator,
+        height: Int, theme: String = "light", excludingGeneration: String? = nil,
+        afterLoad: (() -> Void)? = nil) async throws -> WKScriptMessage {
+        let captured = expectation(description: "Production height envelope captured")
+        captured.assertForOverFulfill = false
+        let receiver = BridgeMessageCapture(captured) { message in
+            guard message.frameInfo.isMainFrame,
+                  let payload = message.body as? [String: Any],
+                  let generation = payload["generation"] as? String else { return false }
+            return generation != excludingGeneration
+        }
+        webView.configuration.userContentController.add(receiver, name: "heightChanged")
+        defer { webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightChanged") }
+        coordinator.loadContentIfNeeded("<p style='height: \(height)px'>Measured</p>", theme: theme, in: webView)
+        afterLoad?()
+        await fulfillment(of: [captured], timeout: 15)
+        return try XCTUnwrap(receiver.messages.first)
+    }
+
+    @MainActor
+    private func captureChildFrameHeight(_ payload: Any, in webView: WKWebView) async throws -> WKScriptMessage {
+        let captured = expectation(description: "Child-frame height envelope captured")
+        let receiver = BridgeMessageCapture(captured) { !$0.frameInfo.isMainFrame }
+        webView.configuration.userContentController.add(receiver, name: "heightChanged")
+        defer { webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightChanged") }
+        let encodedPayload = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+        let source = "<script>window.webkit.messageHandlers.heightChanged.postMessage(\(encodedPayload));</script>"
+        let encodedSource = String(decoding: try JSONSerialization.data(withJSONObject: source,
+            options: .fragmentsAllowed), as: UTF8.self)
+        _ = try await webView.evaluateJavaScript("""
+            (() => {
+                const frame = document.createElement('iframe');
+                frame.srcdoc = \(encodedSource);
+                document.body.appendChild(frame);
+                return true;
+            })()
+            """)
+        await fulfillment(of: [captured], timeout: 15)
+        return try XCTUnwrap(receiver.messages.first)
     }
 
     @MainActor
@@ -417,14 +547,17 @@ final class RichTextEditorReadinessTests: XCTestCase {
     @MainActor
     private final class BridgeMessageCapture: NSObject, WKScriptMessageHandler, @unchecked Sendable {
         let captured: XCTestExpectation
+        let acceptsMessage: (WKScriptMessage) -> Bool
         var messages: [WKScriptMessage] = []
 
-        init(_ captured: XCTestExpectation) {
+        init(_ captured: XCTestExpectation, acceptsMessage: @escaping (WKScriptMessage) -> Bool = { _ in true }) {
             self.captured = captured
+            self.acceptsMessage = acceptsMessage
         }
 
         func userContentController(_ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage) {
+            guard acceptsMessage(message) else { return }
             messages.append(message)
             captured.fulfill()
         }
