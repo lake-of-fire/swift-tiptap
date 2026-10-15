@@ -24,6 +24,8 @@ const RubyParenthesis = Node.create({
 });
 
 let editor = null;
+const bridgeGeneration = window.__tipTapBridgeGeneration;
+let contentGeneration = null;
 window.initEditor = function(content, placeholder) {
   editor = new Editor({
     element: document.querySelector('#editor'),
@@ -45,12 +47,19 @@ window.initEditor = function(content, placeholder) {
     content: content || '',
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
-      window.webkit.messageHandlers.contentChanged.postMessage(html);
+      window.webkit.messageHandlers.contentChanged.postMessage({ bridgeGeneration, contentGeneration, html });
     },
-    onCreate: () => { window.webkit.messageHandlers.editorReady.postMessage(true); },
+    onCreate: () => { window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration }); },
   });
 };
-window.setContent = function(html) { if (editor) editor.commands.setContent(html, false); };
+window.setContent = function(html, generation) {
+  if (!editor) return;
+  if (typeof generation === 'string') contentGeneration = generation;
+  // TipTap 3 takes an options object. Native replacement and direct editor
+  // commands both publish normalized HTML under the current content owner.
+  editor.commands.setContent(html, { emitUpdate: true });
+};
+window.isEditorContentGeneration = function(generation) { return generation === contentGeneration; };
 window.getContent = function() { return editor ? editor.getHTML() : ''; };
 window.setEditable = function(value) { if (editor) editor.setEditable(value); };
 window.focus = function() { if (editor) editor.commands.focus(); };

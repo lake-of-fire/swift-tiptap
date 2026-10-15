@@ -220,6 +220,176 @@ final class RichTextEditorReadinessTests: XCTestCase {
     }
 
     @MainActor
+    func testHostedEditorRejectsQueuedContentDuringBindingReplacement() async throws {
+        let ready = expectation(description: "Original editor initialized")
+        let originalEdited = expectation(description: "Actual original content callback retained")
+        let replacementReceived = expectation(description: "Replacement callback intercepted before publication")
+        let currentEdited = expectation(description: "Current formatting reaches replacement binding")
+        var original = "<p>Original</p>"
+        var replacement = "<p>Replacement</p>"
+        var replacementWrites: [String] = []
+        let originalContext = EditorContext()
+        let replacementContext = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { original }, set: { original = $0 }),
+            editorContext: originalContext,
+            onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(originalContext.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        // A queued command has already captured this owner even if its original
+        // EditorContext is detached before WebKit executes the command.
+        let queuedCommandContext = EditorContext()
+        queuedCommandContext.bind(to: webView, contentGeneration: coordinator.contentGeneration)
+        var retainedOriginal: WKScriptMessage?
+        var interceptReplacement = false
+        let relay = EditorMessageRelay { controller, message in
+            if retainedOriginal == nil {
+                coordinator.userContentController(controller, didReceive: message)
+                if (message.body as? [String: Any])?["html"] as? String == "<h1>Original</h1><p></p>" {
+                    retainedOriginal = message
+                    originalEdited.fulfill()
+                }
+                return
+            }
+            if interceptReplacement, let retainedOriginal,
+               (message.body as? [String: Any])?["contentGeneration"] as? String
+                != (retainedOriginal.body as? [String: Any])?["contentGeneration"] as? String {
+                interceptReplacement = false
+                XCTAssertTrue(coordinator.parent.editorContext === replacementContext)
+                XCTAssertEqual(replacement, "<p>Replacement</p>")
+                XCTAssertTrue(replacementWrites.isEmpty)
+                // B's actual setContent callback is held here. Deliver A on the
+                // same live WebView/main frame before allowing B to publish.
+                coordinator.userContentController(controller, didReceive: retainedOriginal)
+                XCTAssertEqual(replacement, "<p>Replacement</p>")
+                XCTAssertTrue(replacementWrites.isEmpty, "A must never transiently overwrite B")
+                replacementReceived.fulfill()
+            }
+            coordinator.userContentController(controller, didReceive: message)
+        }
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(relay, name: "contentChanged")
+        defer { controller.removeScriptMessageHandler(forName: "contentChanged") }
+        originalContext.toggleHeading(level: 1)
+        await fulfillment(of: [originalEdited], timeout: 5)
+        let oldMessage = try XCTUnwrap(retainedOriginal)
+        XCTAssertTrue(oldMessage.webView === webView && oldMessage.frameInfo.isMainFrame)
+        let oldHTML = try XCTUnwrap((oldMessage.body as? [String: Any])?["html"] as? String)
+        XCTAssertEqual(original, oldHTML)
+
+        interceptReplacement = true
+        mounted.replace(RichTextEditorView(
+            htmlContent: Binding(get: { replacement }, set: {
+                replacement = $0
+                replacementWrites.append($0)
+                if $0 == "<h2>Replacement</h2><p></p>" { currentEdited.fulfill() }
+            }),
+            editorContext: replacementContext
+        ))
+        await fulfillment(of: [replacementReceived], timeout: 5)
+        XCTAssertTrue(mounted.webView === webView)
+        XCTAssertNil(originalContext.webView)
+        XCTAssertTrue(replacementContext.webView === webView)
+        coordinator.userContentController(controller, didReceive: oldMessage)
+        queuedCommandContext.toggleHeading(level: 3)
+        originalContext.toggleHeading(level: 3)
+        let rendered = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(rendered, "<p>Replacement</p>")
+        XCTAssertEqual(replacement, "<p>Replacement</p>")
+        XCTAssertFalse(replacementWrites.contains(oldHTML))
+
+        replacementContext.toggleHeading(level: 2)
+        await fulfillment(of: [currentEdited], timeout: 5)
+        XCTAssertEqual(replacement, "<h2>Replacement</h2><p></p>")
+        XCTAssertEqual(original, oldHTML)
+    }
+
+    @MainActor
+    func testHostedEditorCanRevertAPendingReplacementToItsPreviousValue() async throws {
+        let ready = expectation(description: "Original editor initialized")
+        let reverted = expectation(description: "Pending replacement retired by the original value")
+        var content = "<p>Original</p>"
+        let binding = Binding(get: { content }, set: { content = $0 })
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: binding, editorContext: context, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        var didRevert = false
+        let relay = EditorMessageRelay { controller, message in
+            if !didRevert, (message.body as? [String: Any])?["html"] as? String == "<p>Temporary</p>" {
+                didRevert = true
+                content = "<p>Original</p>"
+                // The binding has changed before the next SwiftUI update.
+                // Keep the same context and deliver B now: it must yield to A,
+                // even though A equals the last accepted JavaScript content.
+                coordinator.userContentController(controller, didReceive: message)
+                XCTAssertEqual(content, "<p>Original</p>")
+                reverted.fulfill()
+                return
+            }
+            coordinator.userContentController(controller, didReceive: message)
+        }
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(relay, name: "contentChanged")
+        defer { controller.removeScriptMessageHandler(forName: "contentChanged") }
+        content = "<p>Temporary</p>"
+        mounted.replace(RichTextEditorView(htmlContent: binding, editorContext: context))
+        await fulfillment(of: [reverted], timeout: 5)
+        let rendered = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(rendered, "<p>Original</p>")
+        XCTAssertEqual(content, "<p>Original</p>")
+        XCTAssertTrue(mounted.webView === webView)
+    }
+
+    @MainActor
+    func testHostedEditorRejectsContentFromSupersededInitialization() async throws {
+        let ready = expectation(description: "Latest initialization completes once")
+        var content = "<p>Original</p>"
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { content }, set: { content = $0 }),
+            editorContext: context,
+            onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        var retainedOriginal: WKScriptMessage?
+        let relay = EditorMessageRelay { controller, message in
+            if retainedOriginal == nil,
+               (message.body as? [String: Any])?["html"] as? String == "<p>Original</p>",
+               (message.body as? [String: Any])?["contentGeneration"] as? String == coordinator.contentGeneration {
+                XCTAssertFalse(coordinator.isEditorReady)
+                retainedOriginal = message
+                // The initial setContent has executed, but its normalization
+                // completion has not published readiness or a binding value.
+                content = "<p>Replacement during initialization</p>"
+            }
+            coordinator.userContentController(controller, didReceive: message)
+        }
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(relay, name: "contentChanged")
+        defer { controller.removeScriptMessageHandler(forName: "contentChanged") }
+        await fulfillment(of: [ready], timeout: 15)
+        let oldMessage = try XCTUnwrap(retainedOriginal)
+        XCTAssertEqual(content, "<p>Replacement during initialization</p>")
+        coordinator.userContentController(controller, didReceive: oldMessage)
+        XCTAssertEqual(content, "<p>Replacement during initialization</p>")
+        let rendered = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(rendered, content)
+    }
+
+    @MainActor
     func testHostedHTMLContentWritesReplacementHeightBinding() async throws {
         let firstHeight = expectation(description: "Original HTML measured")
         let replacementHeight = expectation(description: "Replacement HTML measured")
@@ -252,8 +422,6 @@ final class RichTextEditorReadinessTests: XCTestCase {
 
     @MainActor
     func testEditorRejectsMessagesFromAnotherWebView() async throws {
-        let (source, messages) = try await captureBridgeMessages()
-        defer { source.stopLoading() }
         let owner = WKWebView(frame: .zero)
         var content = "<p>Current</p>"
         let unexpectedWrite = expectation(description: "Retired editor binding is untouched")
@@ -264,7 +432,10 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 unexpectedWrite.fulfill()
             })
         ).makeCoordinator()
+        let (source, messages) = try await captureBridgeMessages(for: coordinator)
+        defer { source.stopLoading() }
         coordinator.webView = owner
+        coordinator.lastContentFromJS = content
         coordinator.isEditorReady = true
         coordinator.userContentController(source.configuration.userContentController,
             didReceive: try XCTUnwrap(messages.first { $0.name == "contentChanged" }))
@@ -280,8 +451,6 @@ final class RichTextEditorReadinessTests: XCTestCase {
 
     @MainActor
     func testEditorRejectsRetainedMessagesAfterDismantle() async throws {
-        let (webView, messages) = try await captureBridgeMessages()
-        defer { webView.stopLoading() }
         var content = "<p>Current</p>"
         let unexpectedWrite = expectation(description: "Retired editor binding is untouched")
         unexpectedWrite.isInverted = true
@@ -291,7 +460,10 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 unexpectedWrite.fulfill()
             })
         ).makeCoordinator()
+        let (webView, messages) = try await captureBridgeMessages(for: coordinator)
+        defer { webView.stopLoading() }
         coordinator.webView = webView
+        coordinator.lastContentFromJS = content
         coordinator.isEditorReady = true
         #if os(macOS)
         RichTextEditorView.dismantleNSView(webView, coordinator: coordinator)
@@ -352,10 +524,6 @@ final class RichTextEditorReadinessTests: XCTestCase {
 
     @MainActor
     func testCoordinatorsRejectChildFrameMessagesInTheirOwnWebView() async throws {
-        let (webView, messages) = try await captureBridgeMessages(childFrame: true)
-        defer { webView.stopLoading() }
-        XCTAssertTrue(messages.allSatisfy { !$0.frameInfo.isMainFrame })
-        XCTAssertTrue(messages.allSatisfy { $0.webView === webView })
         let unexpectedWrite = expectation(description: "Child frame cannot write editor or height bindings")
         unexpectedWrite.isInverted = true
         var content = "<p>Current</p>"
@@ -372,12 +540,17 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 unexpectedWrite.fulfill()
             })
         ).makeCoordinator()
+        let (webView, messages) = try await captureBridgeMessages(for: editor, childFrame: true)
+        defer { webView.stopLoading() }
+        XCTAssertTrue(messages.allSatisfy { !$0.frameInfo.isMainFrame })
+        XCTAssertTrue(messages.allSatisfy { $0.webView === webView })
         editor.webView = webView
         renderer.webView = webView
         let currentHeight = try await captureRenderedHeight(in: webView, coordinator: renderer, height: 400)
         let childHeight = try await captureChildFrameHeight(currentHeight.body, in: webView)
         XCTAssertFalse(childHeight.frameInfo.isMainFrame)
         XCTAssertTrue(childHeight.webView === webView)
+        editor.lastContentFromJS = content
         editor.isEditorReady = true
         editor.userContentController(webView.configuration.userContentController,
             didReceive: try XCTUnwrap(messages.first { $0.name == "contentChanged" }))
@@ -519,7 +692,8 @@ final class RichTextEditorReadinessTests: XCTestCase {
     }
 
     @MainActor
-    private func captureBridgeMessages(childFrame: Bool = false) async throws -> (WKWebView, [WKScriptMessage]) {
+    private func captureBridgeMessages(for coordinator: RichTextEditorView.Coordinator,
+        childFrame: Bool = false) async throws -> (WKWebView, [WKScriptMessage]) {
         let captured = expectation(description: "Real WebKit bridge messages captured")
         captured.expectedFulfillmentCount = 3
         let receiver = BridgeMessageCapture(captured)
@@ -532,8 +706,11 @@ final class RichTextEditorReadinessTests: XCTestCase {
         }
         let script = """
             <script>
-            window.webkit.messageHandlers.contentChanged.postMessage('<p>Retired</p>');
-            window.webkit.messageHandlers.editorReady.postMessage(true);
+            window.webkit.messageHandlers.contentChanged.postMessage({
+                bridgeGeneration: '\(coordinator.bridgeGeneration)',
+                contentGeneration: '\(coordinator.contentGeneration)', html: '<p>Retired</p>'
+            });
+            window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration: '\(coordinator.bridgeGeneration)' });
             window.webkit.messageHandlers.heightChanged.postMessage(123);
             </script>
             """
@@ -542,6 +719,19 @@ final class RichTextEditorReadinessTests: XCTestCase {
         await fulfillment(of: [captured], timeout: 15)
         XCTAssertEqual(receiver.messages.count, 3)
         return (webView, receiver.messages)
+    }
+
+    @MainActor
+    private final class EditorMessageRelay: NSObject, WKScriptMessageHandler, @unchecked Sendable {
+        let receive: (WKUserContentController, WKScriptMessage) -> Void
+
+        init(_ receive: @escaping (WKUserContentController, WKScriptMessage) -> Void) {
+            self.receive = receive
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            receive(controller, message)
+        }
     }
 
     @MainActor
