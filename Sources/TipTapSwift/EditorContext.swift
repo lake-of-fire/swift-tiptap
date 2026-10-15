@@ -20,6 +20,18 @@ public final class EditorContext: ObservableObject {
 
     /// Set by RichTextEditorView's coordinator once the WKWebView is created.
     weak var webView: WKWebView?
+    private var contentGeneration: String?
+
+    func bind(to webView: WKWebView, contentGeneration: String?) {
+        self.webView = webView
+        self.contentGeneration = contentGeneration
+    }
+
+    func unbind(from webView: WKWebView) {
+        guard self.webView === webView else { return }
+        self.webView = nil
+        contentGeneration = nil
+    }
 
     // MARK: - Alert State (observed by RichTextEditorSheet)
 
@@ -112,6 +124,9 @@ public final class EditorContext: ObservableObject {
     // MARK: - Private
 
     private func run(_ js: String) {
-        webView?.evaluateJavaScript(js) { _, _ in }
+        guard let webView, let contentGeneration else { return }
+        // A command queued by the previous context cannot format replacement
+        // content if WebKit executes it after that content has been installed.
+        webView.evaluateJavaScript("if (window.isEditorContentGeneration?.('\(contentGeneration)')) { \(js); }") { _, _ in }
     }
 }
