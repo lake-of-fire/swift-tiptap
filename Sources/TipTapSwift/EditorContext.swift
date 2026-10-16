@@ -90,9 +90,7 @@ public final class EditorContext: ObservableObject {
     // MARK: - Links
 
     public func setLink(url: String) {
-        let escaped = url
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
+        let escaped = RichTextEditorView.escapeForJS(url)
         run("window.setLink('\(escaped)')")
     }
 
@@ -103,21 +101,15 @@ public final class EditorContext: ObservableObject {
     // MARK: - Text Alignment
 
     public func setTextAlign(_ alignment: String) {
-        let escaped = alignment
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
+        let escaped = RichTextEditorView.escapeForJS(alignment)
         run("window.setTextAlign('\(escaped)')")
     }
 
     // MARK: - Images
 
     public func insertImage(url: String, alt: String = "") {
-        let escapedURL = url
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
-        let escapedAlt = alt
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
+        let escapedURL = RichTextEditorView.escapeForJS(url)
+        let escapedAlt = RichTextEditorView.escapeForJS(alt)
         run("window.setImage('\(escapedURL)', '\(escapedAlt)')")
     }
 
