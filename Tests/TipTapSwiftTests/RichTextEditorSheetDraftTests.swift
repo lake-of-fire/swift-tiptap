@@ -133,6 +133,54 @@ import XCTest
 
 final class RichTextEditorReadinessTests: XCTestCase {
     @MainActor
+    func testHostedEditorInsertsImageWithMultilineQuotedAltThroughContext() async throws {
+        let ready = expectation(description: "Editor initialized")
+        let inserted = expectation(description: "Image insertion reaches the binding")
+        var content = "<p>Before image</p><p>After image</p>"
+        var didInsert = false
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { content }, set: { html in
+                content = html
+                if !didInsert, html.contains("<img ") {
+                    didInsert = true
+                    inserted.fulfill()
+                }
+            }),
+            editorContext: context,
+            onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let url = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+        let alt = "First line\nSecond line\rThird line 'single' \"double\" \\path"
+
+        context.insertImage(url: url, alt: alt)
+        await fulfillment(of: [inserted], timeout: 5)
+
+        let image = try await webView.evaluateJavaScript("""
+            (() => {
+                const images = document.querySelectorAll('.tiptap img');
+                return {
+                    count: images.length,
+                    src: images[0]?.getAttribute('src'),
+                    alt: images[0]?.getAttribute('alt'),
+                    paragraphs: Array.from(document.querySelectorAll('.tiptap p'))
+                        .map(element => element.textContent).filter(Boolean)
+                };
+            })()
+            """) as? [String: Any]
+        let result = try XCTUnwrap(image)
+        XCTAssertEqual(result["count"] as? Int, 1)
+        XCTAssertEqual(result["src"] as? String, url)
+        XCTAssertEqual(result["alt"] as? String, alt)
+        XCTAssertEqual(result["paragraphs"] as? [String], ["Before image", "After image"])
+        let rendered = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(content, rendered)
+    }
+
+    @MainActor
     func testHostedEditorUsesLatestBindingValueBeforeReadiness() async throws {
         let ready = expectation(description: "Latest content initialized")
         var content = "<p>Original</p>"
