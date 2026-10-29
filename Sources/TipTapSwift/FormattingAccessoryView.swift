@@ -1,148 +1,71 @@
-//
-//  FormattingAccessoryView.swift
-//  TipTapSwift
-//
-//  A native input accessory view with formatting buttons for the TipTap editor.
-//  Appears above the keyboard when the WKWebView is focused.
-//  UIKit glass background (works in keyboard window) + SwiftUI toolbar content.
-//
-
-#if canImport(UIKit)
-
 import SwiftUI
-import UIKit
 
-// MARK: - SwiftUI Toolbar Content
-
-private struct FormattingToolbar: View {
-    let context: EditorContext
+/// Shared controls; the editor owns their platform-specific placement.
+@MainActor
+struct FormattingToolbar: View {
+    @ObservedObject var context: EditorContext
 
     var body: some View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: true) {
                 HStack(spacing: 4) {
-                    // 1. Text emphasis
-                    iconButton("bold") { context.toggleBold() }
-                    iconButton("italic") { context.toggleItalic() }
-                    iconButton("underline") { context.toggleUnderline() }
-
-                    // 2. Headings
-                    textButton("H1") { context.toggleHeading(level: 1) }
-                    textButton("H2") { context.toggleHeading(level: 2) }
-                    textButton("H3") { context.toggleHeading(level: 3) }
-
-                    // 3. Lists
-                    iconButton("list.bullet") { context.toggleBulletList() }
-                    iconButton("list.number") { context.toggleOrderedList() }
-
-                    // 4. Links & Images
-                    iconButton("link") { context.isLinkAlertPresented = true }
-                    iconButton("photo") { context.isImageAlertPresented = true }
-
-                    // 5. Alignment
-                    iconButton("text.alignleft") { context.setTextAlign("left") }
-                    iconButton("text.aligncenter") { context.setTextAlign("center") }
-                    iconButton("text.alignright") { context.setTextAlign("right") }
-
-                    // 6. Block formatting
-                    iconButton("text.quote") { context.toggleBlockquote() }
-                    iconButton("minus") { context.setHorizontalRule() }
-                    iconButton("strikethrough") { context.toggleStrike() }
+                    icon("bold", "Bold", format: "bold") { context.toggleBold() }
+                    icon("italic", "Italic", format: "italic") { context.toggleItalic() }
+                    icon("underline", "Underline", format: "underline") { context.toggleUnderline() }
+                    heading(1)
+                    heading(2)
+                    heading(3)
+                    icon("list.bullet", "Bullet list", format: "bulletList") { context.toggleBulletList() }
+                    icon("list.number", "Numbered list", format: "orderedList") { context.toggleOrderedList() }
+                    icon("link", "Add link") { context.presentLinkEditor() }
+                    icon("photo", "Insert image") { context.presentImageEditor() }
+                    icon("text.alignleft", "Align left", format: "left") { context.setTextAlign("left") }
+                    icon("text.aligncenter", "Align center", format: "center") { context.setTextAlign("center") }
+                    icon("text.alignright", "Align right", format: "right") { context.setTextAlign("right") }
+                    icon("text.quote", "Block quote", format: "blockquote") { context.toggleBlockquote() }
+                    icon("minus", "Horizontal rule") { context.setHorizontalRule() }
+                    icon("strikethrough", "Strikethrough", format: "strike") { context.toggleStrike() }
                 }
                 .padding(.horizontal, 6)
             }
-
-            Divider()
-                .frame(height: 24)
-                .padding(.leading, 6)
-                .padding(.trailing, 4)
-
-            Button {
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder),
-                    to: nil, from: nil, for: nil
-                )
-            } label: {
-                Image(systemName: "keyboard.chevron.compact.down")
-                    .font(.system(size: 16, weight: .medium))
-            }
-            .tint(.primary)
-            .padding(.trailing, 4)
+#if canImport(UIKit)
+            Divider().frame(height: 24).padding(.horizontal, 6)
+            icon("keyboard.chevron.compact.down", "Dismiss keyboard") { context.dismissKeyboard() }
+                .padding(.trailing, 6)
+#endif
         }
         .frame(height: 44)
+        .disabled(!context.isReady)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("RichTextEditor.FormattingToolbar")
     }
 
-    private func iconButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+    private func icon(_ symbol: String, _ title: String, format: String? = nil,
+                      action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
+            Image(systemName: symbol)
                 .font(.system(size: 16, weight: .medium))
+                .frame(width: 34, height: 36)
+                .contentShape(Rectangle())
         }
-        .tint(.primary)
-        .frame(width: 34, height: 36)
+        .buttonStyle(.borderless)
+        .foregroundColor(format.map { context.activeFormats.contains($0) } == true ? .accentColor : .primary)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier("RichTextEditor.\(title)")
+        .help(title)
     }
 
-    private func textButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
+    private func heading(_ level: Int) -> some View {
+        Button { context.toggleHeading(level: level) } label: {
+            Text("H\(level)")
                 .font(.system(size: 15, weight: .semibold))
+                .frame(width: 34, height: 36)
+                .contentShape(Rectangle())
         }
-        .tint(.primary)
-        .frame(width: 34, height: 36)
+        .buttonStyle(.borderless)
+        .foregroundColor(context.activeFormats.contains("heading\(level)") ? .accentColor : .primary)
+        .accessibilityLabel("Heading \(level)")
+        .accessibilityIdentifier("RichTextEditor.Heading\(level)")
+        .help("Heading \(level)")
     }
 }
-
-// MARK: - UIKit Host
-
-@MainActor
-final class FormattingAccessoryView: UIInputView {
-
-    private var hostingController: UIHostingController<FormattingToolbar>?
-
-    init(context: EditorContext) {
-        super.init(
-            frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 52),
-            inputViewStyle: .default
-        )
-        autoresizingMask = .flexibleWidth
-
-        // Glass / material background (UIKit — renders reliably in keyboard window)
-        let effectView: UIVisualEffectView
-        if #available(iOS 26, *) {
-            effectView = UIVisualEffectView(effect: UIGlassEffect())
-        } else {
-            effectView = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-        }
-        effectView.translatesAutoresizingMaskIntoConstraints = false
-        effectView.clipsToBounds = true
-        effectView.layer.cornerRadius = 12
-        effectView.layer.cornerCurve = .continuous
-        addSubview(effectView)
-
-        // SwiftUI toolbar content
-        let hosting = UIHostingController(rootView: FormattingToolbar(context: context))
-        hosting.view.backgroundColor = .clear
-        hosting.view.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(hosting.view)
-
-        NSLayoutConstraint.activate([
-            // Glass background with 8pt padding
-            effectView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            effectView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            effectView.topAnchor.constraint(equalTo: topAnchor),
-            effectView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-
-            // SwiftUI content aligned to the glass area
-            hosting.view.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            hosting.view.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            hosting.view.topAnchor.constraint(equalTo: effectView.topAnchor),
-            hosting.view.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
-        ])
-
-        hostingController = hosting
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-}
-
-#endif

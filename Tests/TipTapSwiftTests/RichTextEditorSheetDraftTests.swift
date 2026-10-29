@@ -259,3 +259,193 @@ final class RichTextEditorReadinessTests: XCTestCase {
     }
 }
 #endif
+
+#if os(macOS) || os(iOS)
+@MainActor
+private final class HostedFormattingEditor {
+    let store: RichTextEditorSheetDraftStore
+    let context = EditorContext()
+    let ready = XCTestExpectation(description: "Standalone editor ready")
+#if os(macOS)
+    let window: NSWindow
+#else
+    let window: UIWindow
+    let previousKeyWindow: UIWindow?
+#endif
+
+    init(html: String) {
+        store = RichTextEditorSheetDraftStore(htmlContent: html)
+        let store = store
+        let ready = ready
+        let editor = RichTextEditorView(htmlContent: Binding(
+            get: { store.draftHTMLContent }, set: { store.syncFromEditor($0) }
+        ), placeholder: "Test placeholder", editorContext: context, onEditorReady: {
+            store.beginTrackingEdits()
+            ready.fulfill()
+        })
+#if os(macOS)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+                          styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: editor)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        window.makeKeyAndOrderFront(nil)
+#else
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        previousKeyWindow = scene?.windows.first(where: \.isKeyWindow)
+        if let scene { window = UIWindow(windowScene: scene) }
+        else { window = UIWindow(frame: CGRect(x: 0, y: 0, width: 600, height: 600)) }
+        let host = UIHostingController(rootView: editor)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+#endif
+    }
+
+    func close() {
+#if os(macOS)
+        window.contentView = nil
+        window.close()
+#else
+        window.isHidden = true
+        window.rootViewController = nil
+        previousKeyWindow?.makeKey()
+#endif
+    }
+
+    func selectBetaAndBlur() async throws {
+        let webView = try XCTUnwrap(context.webView)
+        _ = try await webView.evaluateJavaScript("""
+        const element = document.querySelector('.tiptap');
+        element.focus();
+        const range = document.createRange();
+        range.setStart(element.querySelector('p').firstChild, 6);
+        range.setEnd(element.querySelector('p').firstChild, 10);
+        const selection = window.getSelection();
+        selection.removeAllRanges(); selection.addRange(range);
+        document.dispatchEvent(new Event('selectionchange'));
+        true;
+        """)
+        // Give the browser's native selection-change observer its own turn.
+        _ = try await webView.evaluateJavaScript("document.querySelector('.tiptap').blur(); true")
+    }
+}
+
+final class RichTextEditorFormattingTests: XCTestCase {
+    @MainActor
+    func testStandaloneEditorGuardsReadinessAndFormatsSelectedTextAfterBlur() async throws {
+        let host = HostedFormattingEditor(html: "<p>Alpha Beta</p>")
+        defer { host.close() }
+        XCTAssertFalse(host.context.isReady)
+        host.context.toggleBold()
+        host.context.presentLinkEditor()
+        XCTAssertFalse(host.context.isLinkAlertPresented)
+        await fulfillment(of: [host.ready], timeout: 20)
+        XCTAssertTrue(host.context.isReady)
+        let webView = try XCTUnwrap(host.context.webView)
+        let initial = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(initial, "<p>Alpha Beta</p>")
+        try await host.selectBetaAndBlur()
+        host.context.toggleBold()
+        let formatted = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(formatted, "<p>Alpha <strong>Beta</strong></p>")
+    }
+
+    @MainActor
+    func testLinkAndImageCommandsRetainSelectionAndRoundTripAttributes() async throws {
+        let host = HostedFormattingEditor(html: "<p>Alpha Beta</p>")
+        defer { host.close() }
+        await fulfillment(of: [host.ready], timeout: 20)
+        let webView = try XCTUnwrap(host.context.webView)
+        try await host.selectBetaAndBlur()
+        host.context.setLink(url: "https://example.com/a?q=one&other=two")
+        let link = try await webView.evaluateJavaScript("""
+        const link = document.querySelector('.tiptap a');
+        ({text: link?.textContent, href: link?.getAttribute('href')});
+        """) as? [String: String]
+        XCTAssertEqual(link?["text"], "Beta")
+        XCTAssertEqual(link?["href"], "https://example.com/a?q=one&other=two")
+        host.context.removeLink()
+        let noLink = try await webView.evaluateJavaScript("document.querySelector('.tiptap a') === null") as? Bool
+        XCTAssertEqual(noLink, true)
+        host.context.insertImage(url: "data:image/png;base64,iVBORw0KGgo=", alt: "Image's label")
+        let alt = try await webView.evaluateJavaScript("document.querySelector('.tiptap img')?.alt") as? String
+        XCTAssertEqual(alt, "Image's label")
+    }
+
+    @MainActor
+    func testContextReplacementRejectsOldViewStateAndDetach() {
+        let context = EditorContext()
+        let oldView = WKWebView()
+        let newView = WKWebView()
+        context.attach(oldView)
+        context.markReady(oldView)
+        context.attach(newView)
+        XCTAssertFalse(context.isReady)
+        context.markReady(oldView)
+        XCTAssertFalse(context.isReady)
+        context.markReady(newView)
+        context.updateState(["focused": true, "active": ["bold"]], from: newView)
+        context.updateState(["focused": false, "active": []], from: oldView)
+        context.detach(oldView)
+        XCTAssertTrue(context.isReady)
+        XCTAssertTrue(context.isFocused)
+        XCTAssertEqual(context.activeFormats, ["bold"])
+        context.detach(newView)
+        XCTAssertFalse(context.isReady)
+        XCTAssertFalse(context.isFocused)
+    }
+
+#if os(iOS)
+    @MainActor
+    func testIOSContainerShowsToolbarOnlyAfterReadinessAndEditorFocus() async throws {
+        let host = HostedFormattingEditor(html: "<p>Layout</p>")
+        defer { host.close() }
+        await fulfillment(of: [host.ready], timeout: 20)
+        let webView = try XCTUnwrap(host.context.webView)
+        var responder: UIResponder? = webView
+        while responder != nil && !(responder is EditorViewController) { responder = responder?.next }
+        let controller = try XCTUnwrap(responder as? EditorViewController)
+        let bar = try XCTUnwrap(controller.view.subviews.first {
+            $0.accessibilityIdentifier == "RichTextEditor.FormattingToolbarHost"
+        })
+        host.context.updateState(["focused": false, "active": []], from: webView)
+        controller.updateToolbar()
+        controller.view.layoutIfNeeded()
+        XCTAssertTrue(bar.isHidden)
+        host.context.updateState(["focused": true, "active": []], from: webView)
+        controller.updateToolbar()
+        controller.view.layoutIfNeeded()
+        controller.view.layoutIfNeeded()
+        XCTAssertFalse(bar.isHidden)
+        XCTAssertEqual(bar.frame.height, 52, accuracy: 1)
+        XCTAssertLessThanOrEqual(bar.frame.maxY, controller.view.bounds.maxY + 1)
+        XCTAssertLessThanOrEqual(webView.frame.maxY, bar.frame.minY + 1)
+        host.context.resetReadiness()
+        controller.updateToolbar()
+        controller.view.layoutIfNeeded()
+        XCTAssertTrue(bar.isHidden)
+    }
+
+    @MainActor
+    func testDockedFloatingAndOffscreenKeyboardGeometry() {
+        let bounds = CGRect(x: 0, y: 0, width: 800, height: 1000)
+        let safe = CGRect(x: 0, y: 20, width: 800, height: 960)
+        let docked = EditorKeyboardGeometry(bounds: bounds, safeArea: safe,
+            keyboard: CGRect(x: 0, y: 700, width: 800, height: 300))
+        XCTAssertTrue(docked.reservesBottomSpace)
+        XCTAssertEqual(docked.toolbarWidth, 800)
+        let floating = EditorKeyboardGeometry(bounds: bounds, safeArea: safe,
+            keyboard: CGRect(x: 650, y: 400, width: 320, height: 240))
+        XCTAssertFalse(floating.reservesBottomSpace)
+        XCTAssertEqual(floating.toolbarWidth, 320)
+        XCTAssertLessThanOrEqual(floating.toolbarCenterX + floating.toolbarWidth / 2, safe.maxX)
+        let absent = EditorKeyboardGeometry(bounds: bounds, safeArea: safe,
+            keyboard: CGRect(x: 0, y: 980, width: 800, height: 0))
+        XCTAssertTrue(absent.reservesBottomSpace)
+        XCTAssertEqual(absent.toolbarWidth, safe.width)
+    }
+#endif
+}
+#endif

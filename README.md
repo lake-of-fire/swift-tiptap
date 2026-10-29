@@ -51,6 +51,17 @@ struct EditorView: View {
 }
 ```
 
+Formatting controls and link/image dialogs belong to `RichTextEditorView`, including
+when it is used without a sheet. On iOS, a native container uses
+`UIKeyboardLayoutGuide` to position the SwiftUI controls above docked or floating
+keyboards. On macOS, the controls stay above the document. Controls are disabled
+until `EditorContext.isReady` is true; selection bookmarks preserve formatting
+ranges while native controls or dialogs have focus. No WebKit internal-view
+subclassing or method replacement is used.
+
+The app workspace exposes the package's original tests through the
+`TipTapEditorTests` scheme for focused iOS and macOS verification.
+
 ### Editor Sheet
 
 ```swift

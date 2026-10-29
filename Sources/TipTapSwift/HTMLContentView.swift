@@ -48,9 +48,8 @@ public struct HTMLContentView {
         webView.scrollView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
-        #elseif canImport(AppKit)
-        webView.setValue(false, forKey: "drawsBackground")
         #endif
+        webView.underPageBackgroundColor = .clear
 
         webView.navigationDelegate = coordinator
         coordinator.webView = webView
@@ -167,19 +166,18 @@ public struct HTMLContentView {
 
         public func webView(
             _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-        ) {
+            decidePolicyFor navigationAction: WKNavigationAction
+        ) async -> WKNavigationActionPolicy {
             if navigationAction.navigationType == .linkActivated,
                let url = navigationAction.request.url {
                 #if canImport(UIKit)
-                UIApplication.shared.open(url)
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
                 #elseif canImport(AppKit)
                 NSWorkspace.shared.open(url)
                 #endif
-                decisionHandler(.cancel)
+                return .cancel
             } else {
-                decisionHandler(.allow)
+                return .allow
             }
         }
     }
