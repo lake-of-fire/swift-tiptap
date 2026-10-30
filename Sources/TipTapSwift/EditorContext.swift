@@ -21,19 +21,64 @@ public final class EditorContext: ObservableObject {
     /// Set by RichTextEditorView's coordinator once the WKWebView is created.
     weak var webView: WKWebView?
     private var contentGeneration: String?
+    @Published public private(set) var isReady = false
+    @Published public private(set) var isFocused = false
+    @Published public private(set) var activeFormats = Set<String>()
 
-    func bind(to webView: WKWebView, contentGeneration: String?) {
+    func attach(_ webView: WKWebView) {
+        guard self.webView !== webView else { return }
         self.webView = webView
-        self.contentGeneration = contentGeneration
+        resetReadiness()
     }
 
-    func unbind(from webView: WKWebView) {
+    func detach(_ webView: WKWebView) {
         guard self.webView === webView else { return }
         self.webView = nil
         contentGeneration = nil
+        resetReadiness()
     }
 
-    // MARK: - Alert State (observed by RichTextEditorSheet)
+    func bind(to webView: WKWebView, contentGeneration: String) {
+        attach(webView)
+        self.contentGeneration = contentGeneration
+    }
+
+    func resetReadiness() {
+        if isReady { isReady = false }
+        if isFocused { isFocused = false }
+        if !activeFormats.isEmpty { activeFormats = [] }
+    }
+
+    func markReady(_ webView: WKWebView) {
+        guard self.webView === webView else { return }
+        isReady = true
+    }
+
+    func updateState(_ state: [String: Any], from webView: WKWebView) {
+        guard self.webView === webView, isReady else { return }
+        let focused = state["focused"] as? Bool ?? false
+        let formats = Set(state["active"] as? [String] ?? [])
+        if focused != isFocused { isFocused = focused }
+        if formats != activeFormats { activeFormats = formats }
+    }
+
+    public func presentLinkEditor() {
+        guard isReady else { return }
+        isLinkAlertPresented = true
+    }
+
+    public func presentImageEditor() {
+        guard isReady else { return }
+        isImageAlertPresented = true
+    }
+
+#if canImport(UIKit)
+    public func dismissKeyboard() {
+        webView?.endEditing(true)
+    }
+#endif
+
+    // MARK: - Alert State (presented by the reusable editor)
 
     /// Set to `true` to present a link URL input alert.
     @Published public var isLinkAlertPresented = false
@@ -90,8 +135,7 @@ public final class EditorContext: ObservableObject {
     // MARK: - Links
 
     public func setLink(url: String) {
-        let escaped = RichTextEditorView.escapeForJS(url)
-        run("window.setLink('\(escaped)')")
+        run("window.setLink(\(Self.literal(url)))")
     }
 
     public func removeLink() {
@@ -101,24 +145,24 @@ public final class EditorContext: ObservableObject {
     // MARK: - Text Alignment
 
     public func setTextAlign(_ alignment: String) {
-        let escaped = RichTextEditorView.escapeForJS(alignment)
-        run("window.setTextAlign('\(escaped)')")
+        run("window.setTextAlign(\(Self.literal(alignment)))")
     }
 
     // MARK: - Images
 
     public func insertImage(url: String, alt: String = "") {
-        let escapedURL = RichTextEditorView.escapeForJS(url)
-        let escapedAlt = RichTextEditorView.escapeForJS(alt)
-        run("window.setImage('\(escapedURL)', '\(escapedAlt)')")
+        run("window.setImage(\(Self.literal(url)), \(Self.literal(alt)))")
     }
 
     // MARK: - Private
 
+    private static func literal(_ value: String) -> String {
+        String(decoding: try! JSONEncoder().encode(value), as: UTF8.self)
+    }
+
     private func run(_ js: String) {
-        guard let webView, let contentGeneration else { return }
-        // A command queued by the previous context cannot format replacement
-        // content if WebKit executes it after that content has been installed.
-        webView.evaluateJavaScript("if (window.isEditorContentGeneration?.('\(contentGeneration)')) { \(js); }") { _, _ in }
+        // Never execute commands against an uninitialized or replaced editor.
+        guard isReady, let webView, let contentGeneration else { return }
+        webView.evaluateJavaScript("if (window.isEditorContentGeneration?.(\(Self.literal(contentGeneration)))) { \(js); }") { _, _ in }
     }
 }

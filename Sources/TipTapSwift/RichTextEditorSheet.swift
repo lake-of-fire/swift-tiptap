@@ -3,7 +3,7 @@
 //  TipTapSwift
 //
 //  A ready-to-use sheet for editing HTML content with the TipTap editor.
-//  Formatting toolbar appears as a native input accessory view above the keyboard.
+//  The reusable editor owns native formatting and keyboard layout.
 //
 
 import SwiftUI
@@ -11,8 +11,7 @@ import Combine
 
 /// A sheet that wraps ``RichTextEditorView`` with Cancel / Done toolbar buttons.
 ///
-/// A native formatting toolbar appears above the keyboard automatically via
-/// the ``EditorContext`` input accessory view.
+/// The reusable editor provides native formatting controls on iOS and macOS.
 ///
 /// Works on a local copy of the content and only commits changes on "Done".
 ///
@@ -26,14 +25,10 @@ public struct RichTextEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var draftStore: RichTextEditorSheetDraftStore
-    @State private var draftTitle: String
     @State private var isEditorReady = false
     @State private var isPresentingDiscardConfirmation = false
     @StateObject private var editorContext = EditorContext()
-    @State private var linkURL = ""
-    @State private var imageURL = ""
 
-    private let originalTitle: String
     private let navigationTitleBinding: Binding<String>?
     private let placeholder: String?
     private let normalizeOnSave: (String) -> String
@@ -54,9 +49,9 @@ public struct RichTextEditorSheet: View {
         onSave: ((String, String) -> Void)? = nil
     ) {
         self._htmlContent = htmlContent
-        self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
-        self._draftTitle = State(initialValue: title)
-        self.originalTitle = title
+        self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(
+            htmlContent: htmlContent.wrappedValue, title: title
+        ))
         self.navigationTitleBinding = nil
         self.placeholder = placeholder
         self.normalizeOnSave = normalizeOnSave
@@ -78,9 +73,9 @@ public struct RichTextEditorSheet: View {
         onSave: ((String, String) -> Void)? = nil
     ) {
         self._htmlContent = htmlContent
-        self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(htmlContent: htmlContent.wrappedValue))
-        self._draftTitle = State(initialValue: title.wrappedValue)
-        self.originalTitle = title.wrappedValue
+        self._draftStore = StateObject(wrappedValue: RichTextEditorSheetDraftStore(
+            htmlContent: htmlContent.wrappedValue, title: title.wrappedValue
+        ))
         self.navigationTitleBinding = title
         self.placeholder = placeholder
         self.normalizeOnSave = normalizeOnSave
@@ -89,7 +84,7 @@ public struct RichTextEditorSheet: View {
     }
 
     private var hasEdits: Bool {
-        draftStore.hasEdits || draftTitle != originalTitle
+        draftStore.hasEdits
     }
 
     public var body: some View {
@@ -137,7 +132,7 @@ public struct RichTextEditorSheet: View {
                 if navigationTitleBinding != nil {
                     if #available(iOS 16.0, macOS 13.0, *) {
                         HStack(spacing: 6) {
-                            Text(draftTitle)
+                            Text(draftStore.draftTitle)
                                 .font(.headline)
                                 .lineLimit(1)
                             RenameButton()
@@ -159,43 +154,7 @@ public struct RichTextEditorSheet: View {
         } message: {
             Text("Your changes haven’t been saved.")
         }
-        .alert("Add Link", isPresented: $editorContext.isLinkAlertPresented) {
-            TextField("URL, email, or phone number", text: $linkURL)
-#if canImport(UIKit)
-                .textInputAutocapitalization(.never)
-#endif
-            Button("Add") {
-                if !linkURL.isEmpty {
-                    editorContext.setLink(url: linkURL.autoDetectedLink)
-                }
-                linkURL = ""
-            }
-            Button("Remove Link", role: .destructive) {
-                editorContext.removeLink()
-                linkURL = ""
-            }
-            Button("Cancel", role: .cancel) {
-                linkURL = ""
-            }
-        } message: {
-            Text("Auto-detects links, emails, and phone numbers")
-        }
-        .alert("Add Image", isPresented: $editorContext.isImageAlertPresented) {
-            TextField("https://example.com/image.jpg", text: $imageURL)
-#if canImport(UIKit)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-#endif
-            Button("Insert") {
-                if !imageURL.isEmpty {
-                    editorContext.insertImage(url: imageURL)
-                }
-                imageURL = ""
-            }
-            Button("Cancel", role: .cancel) {
-                imageURL = ""
-            }
-        }
+
     }
 
     @ViewBuilder
@@ -242,12 +201,12 @@ public struct RichTextEditorSheet: View {
     }
 
     private func performSave() {
-        let committedHTML = draftStore.commit(normalizingWith: normalizeOnSave)
-        htmlContent = committedHTML
+        let savedDraft = draftStore.snapshotForSave(normalizingWith: normalizeOnSave)
+        htmlContent = savedDraft.html
         if let navigationTitleBinding {
-            navigationTitleBinding.wrappedValue = draftTitle
+            navigationTitleBinding.wrappedValue = savedDraft.title
         }
-        onSave?(draftTitle, committedHTML)
+        onSave?(savedDraft.title, savedDraft.html)
         dismiss()
     }
 
@@ -271,32 +230,45 @@ public struct RichTextEditorSheet: View {
                 content
                     .navigationTitle(
                         Binding(
-                            get: { draftTitle },
-                            set: { draftTitle = $0 }
+                            get: { draftStore.draftTitle },
+                            set: { draftStore.draftTitle = $0 }
                         )
                     )
             } else {
-                content.navigationTitle(draftTitle)
+                content.navigationTitle(draftStore.draftTitle)
             }
         } else {
-            content.navigationTitle(draftTitle)
+            content.navigationTitle(draftStore.draftTitle)
         }
     }
 }
 
 @MainActor
 final class RichTextEditorSheetDraftStore: ObservableObject {
+    struct SavedDraft: Equatable {
+        let title: String
+        let html: String
+    }
+
     private(set) var originalHTMLContent: String
+    private let originalTitle: String
     @Published var draftHTMLContent: String
+    @Published var draftTitle: String
     private var isTrackingEdits = false
     private var editorBaselineHTMLContent: String?
 
-    init(htmlContent: String) {
+    init(htmlContent: String, title: String = "") {
         self.originalHTMLContent = htmlContent
+        self.originalTitle = title
         self.draftHTMLContent = htmlContent
+        self.draftTitle = title
     }
 
     var hasEdits: Bool {
+        draftTitle != originalTitle || hasBodyEdits
+    }
+
+    private var hasBodyEdits: Bool {
         guard isTrackingEdits else { return false }
         return draftHTMLContent != (editorBaselineHTMLContent ?? originalHTMLContent)
     }
@@ -314,15 +286,16 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
         isTrackingEdits = true
     }
 
-    func beginTrackingEditsForTests() {
-        beginTrackingEdits()
+    func commit(normalizingWith normalize: (String) -> String = { $0 }) -> String {
+        normalize(hasBodyEdits ? draftHTMLContent : originalHTMLContent)
     }
 
-    func commit(normalizingWith normalize: (String) -> String = { $0 }) -> String {
-        normalize(hasEdits ? draftHTMLContent : originalHTMLContent)
+    func snapshotForSave(normalizingWith normalize: (String) -> String = { $0 }) -> SavedDraft {
+        SavedDraft(title: draftTitle, html: commit(normalizingWith: normalize))
     }
 
     func cancel() {
+        draftTitle = originalTitle
         draftHTMLContent = originalHTMLContent
         editorBaselineHTMLContent = originalHTMLContent
     }

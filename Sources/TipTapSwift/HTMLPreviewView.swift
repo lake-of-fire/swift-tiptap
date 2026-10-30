@@ -54,9 +54,8 @@ public struct HTMLPreviewView {
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.isUserInteractionEnabled = false
-        #elseif canImport(AppKit)
-        webView.setValue(false, forKey: "drawsBackground")
         #endif
+        webView.underPageBackgroundColor = .clear
 
         coordinator.webView = webView
     }
