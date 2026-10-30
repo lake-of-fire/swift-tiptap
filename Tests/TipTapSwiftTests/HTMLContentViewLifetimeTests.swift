@@ -212,6 +212,7 @@ final class HTMLContentViewLifetimeTests: XCTestCase {
         return try XCTUnwrap(receiver.messages.first)
     }
 
+    @MainActor
     private final class BridgeMessageCapture: NSObject, WKScriptMessageHandler, @unchecked Sendable {
         let captured: XCTestExpectation
         let acceptsMessage: (WKScriptMessage) -> Bool

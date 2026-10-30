@@ -319,17 +319,10 @@ struct EditorWebSurface {
             parent.editorContext.resetReadiness()
         }
 
-        @MainActor
-        public func webView(
-            _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-        ) {
-            if navigationAction.navigationType == .other || navigationAction.request.url?.isFileURL == true {
-                decisionHandler(.allow)
-            } else {
-                decisionHandler(.cancel)
-            }
+        public func webView(_ webView: WKWebView,
+                            decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+            navigationAction.navigationType == .other || navigationAction.request.url?.isFileURL == true
+                ? .allow : .cancel
         }
     }
 }
