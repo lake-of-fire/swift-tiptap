@@ -97,13 +97,6 @@ final class EditorBindingLifetimeTests: XCTestCase {
         defer { mounted.close() }
         await fulfillment(of: [ready], timeout: 15)
         let webView = try XCTUnwrap(context.webView)
-        #if os(iOS)
-        let contentView = try XCTUnwrap(webView.scrollView.subviews.first {
-            let name = NSStringFromClass(type(of: $0))
-            return name.hasPrefix("WKContent") || name.hasPrefix("_TipTapContent_")
-        })
-        let originalAccessory = try XCTUnwrap(contentView.inputAccessoryView)
-        #endif
 
         mounted.replace(EditorWebSurface(
             htmlContent: Binding(
@@ -119,18 +112,13 @@ final class EditorBindingLifetimeTests: XCTestCase {
         let deadline = Date().addingTimeInterval(5)
         var rendered: String?
         repeat {
-            rendered = try await webView.evaluateJavaScript("window.getContent()") as? String
+            rendered = try await evaluateEditorJavaScript("window.getContent()", in: webView) as? String
             if rendered == "<p>Replacement</p>" { break }
             try await Task.sleep(nanoseconds: 10_000_000)
         } while Date() < deadline
         XCTAssertEqual(rendered, "<p>Replacement</p>")
         XCTAssertNil(context.webView, "The previous command context must lose its editor")
         XCTAssertTrue(replacementContext.webView === webView, "The new context must reuse the original editor")
-        #if os(iOS)
-        let accessory = try XCTUnwrap(contentView.inputAccessoryView)
-        XCTAssertTrue(accessory is FormattingAccessoryView)
-        XCTAssertFalse(accessory === originalAccessory)
-        #endif
 
         replacementContext.toggleHeading(level: 2)
         await fulfillment(of: [edited], timeout: 2)
@@ -142,7 +130,127 @@ final class EditorBindingLifetimeTests: XCTestCase {
         #else
         EditorWebSurface.dismantle(webView, coordinator: coordinator)
         #endif
+        try await waitForEditorState("Dismantled context detaches") { replacementContext.webView == nil }
         XCTAssertNil(replacementContext.webView)
+        XCTAssertFalse(replacementContext.isReady)
+    }
+
+    #if os(iOS)
+    @MainActor
+    func testPublicEditorReplacesKeyboardGuideToolbarAndFormattingOwner() async throws {
+        let ready = expectation(description: "Public editor initialized")
+        let replacementReady = expectation(description: "Replacement public editor initialized")
+        let edited = expectation(description: "Formatting reaches current public binding")
+        var original = "<p>Original</p>"
+        var replacement = "<p>Replacement</p>"
+        let context = EditorContext()
+        let replacementContext = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { original }, set: { original = $0 }),
+            editorContext: context, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let originalToolbar = try await focusedKeyboardToolbar(in: webView, context: context)
+
+        mounted.replace(RichTextEditorView(
+            htmlContent: Binding(get: { replacement }, set: {
+                replacement = $0
+                if $0 == "<h2>Replacement</h2><p></p>" { edited.fulfill() }
+            }),
+            editorContext: replacementContext, onEditorReady: { replacementReady.fulfill() }
+        ))
+        await fulfillment(of: [replacementReady], timeout: 15)
+        let replacementWebView = try XCTUnwrap(replacementContext.webView)
+        XCTAssertFalse(replacementWebView === webView, "Public context identity replaces the native container")
+        try await waitForEditorState("Previous public context detaches") { context.webView == nil }
+        XCTAssertFalse(context.isReady)
+        let replacementToolbar = try await focusedKeyboardToolbar(in: replacementWebView, context: replacementContext)
+        XCTAssertFalse(replacementToolbar === originalToolbar)
+        XCTAssertNil(originalToolbar.window)
+
+        context.toggleHeading(level: 3)
+        replacementContext.toggleHeading(level: 2)
+        await fulfillment(of: [edited], timeout: 5)
+        try await waitForEditorState("Current toolbar receives heading state") {
+            replacementContext.activeFormats.contains("heading2")
+        }
+        XCTAssertEqual(original, "<p>Original</p>")
+        XCTAssertEqual(replacement, "<h2>Replacement</h2><p></p>")
+
+        mounted.close()
+        try await waitForEditorState("Closed public editor detaches") { replacementContext.webView == nil }
+        XCTAssertFalse(replacementContext.isReady)
+        XCTAssertFalse(replacementContext.isFocused)
+        XCTAssertTrue(replacementContext.activeFormats.isEmpty)
+    }
+
+    @MainActor
+    private func focusedKeyboardToolbar(in webView: WKWebView, context: EditorContext) async throws -> UIView {
+        var responder: UIResponder? = webView
+        while responder != nil && !(responder is EditorViewController) { responder = responder?.next }
+        let controller = try XCTUnwrap(responder as? EditorViewController)
+        XCTAssertTrue(controller.context === context)
+        let toolbar = try XCTUnwrap(controller.view.subviews.first {
+            $0.accessibilityIdentifier == "RichTextEditor.FormattingToolbarHost"
+        })
+        XCTAssertTrue(context.isReady)
+        XCTAssertTrue(controller.view.keyboardLayoutGuide.followsUndockedKeyboard)
+        // Use the real DOM/bridge focus path, rather than manufacturing context state.
+        _ = try await evaluateEditorJavaScript("window.focus(); true", in: webView)
+        try await waitForEditorState("Native toolbar follows ready, focused editor") {
+            context.isFocused && !toolbar.isHidden && toolbar.window != nil
+        }
+        controller.view.layoutIfNeeded()
+        controller.view.layoutIfNeeded()
+        XCTAssertEqual(toolbar.frame.height, 52, accuracy: 1)
+        XCTAssertGreaterThan(toolbar.frame.width, 0)
+        XCTAssertLessThanOrEqual(toolbar.frame.maxY, controller.view.bounds.maxY + 1)
+        let keyboard = controller.view.keyboardLayoutGuide.layoutFrame
+        let safeArea = controller.view.safeAreaLayoutGuide.layoutFrame
+        // UITrackingLayoutGuide chooses its own near-top threshold. Both
+        // supported placements must keep the toolbar on a public guide edge.
+        XCTAssertLessThanOrEqual(min(abs(toolbar.frame.maxY - keyboard.minY),
+                                     abs(toolbar.frame.maxY - safeArea.maxY)), 1)
+        let docked = keyboard.height > 1 && keyboard.maxY >= controller.view.bounds.maxY - 1
+            && keyboard.width >= safeArea.width - 1
+        if keyboard.height <= 1 || docked || toolbar.frame.maxY >= safeArea.maxY - 1 {
+            XCTAssertLessThanOrEqual(webView.frame.maxY, toolbar.frame.minY + 1)
+        }
+        return toolbar
+    }
+    #endif
+
+    @MainActor
+    private func evaluateEditorJavaScript(_ script: String, in webView: WKWebView) async throws -> Any? {
+        let completed = expectation(description: "Editor JavaScript reply")
+        var result: Result<Any?, Error>?
+        var acceptingReply = true
+        webView.evaluateJavaScript(script) { value, error in
+            guard acceptingReply else { return }
+            result = error.map { .failure($0) } ?? .success(value)
+            completed.fulfill()
+        }
+        // Bound the IPC callback itself; a polling deadline cannot do that.
+        await fulfillment(of: [completed], timeout: 5)
+        acceptingReply = false
+        return try XCTUnwrap(result, "Editor JavaScript did not settle").get()
+    }
+
+    @MainActor
+    private func waitForEditorState(_ description: String, timeout: TimeInterval = 5,
+                                    _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            try Task.checkCancellation()
+            guard Date() < deadline else {
+                XCTFail(description)
+                throw NSError(domain: "EditorBindingLifetimeTests", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: description])
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
     }
 
     @MainActor
@@ -532,24 +640,24 @@ final class EditorBindingLifetimeTests: XCTestCase {
     @MainActor
     private final class MountedEditorView<Content: View> {
         #if os(macOS)
-        let host: NSHostingView<Content>
+        let host: NSHostingView<Content?>
         let window: NSWindow
         #else
-        let host: UIHostingController<Content>
+        let host: UIHostingController<Content?>
         let window: UIWindow
         weak var previousKeyWindow: UIWindow?
         #endif
 
         init(_ editor: Content) {
             #if os(macOS)
-            host = NSHostingView(rootView: editor)
+            host = NSHostingView(rootView: Optional(editor))
             window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
                 styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = host
             host.layoutSubtreeIfNeeded()
             #else
-            host = UIHostingController(rootView: editor)
+            host = UIHostingController(rootView: Optional(editor))
             let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
             previousKeyWindow = scene?.windows.first(where: \.isKeyWindow)
             if let scene {
@@ -587,10 +695,15 @@ final class EditorBindingLifetimeTests: XCTestCase {
         }
 
         func close() {
+            // Remove the SwiftUI graph as well as the window. Keeping a host
+            // with its old root alive does not guarantee representable teardown.
+            host.rootView = nil
             #if os(macOS)
+            host.layoutSubtreeIfNeeded()
             window.contentView = nil
             window.close()
             #else
+            host.view.layoutIfNeeded()
             window.isHidden = true
             window.rootViewController = nil
             previousKeyWindow?.makeKey()
