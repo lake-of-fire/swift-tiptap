@@ -82,6 +82,15 @@ import Testing
     #expect("tel:+1234567890".autoDetectedLink == "tel:+1234567890")
 }
 
+@Test func preservesExistingEmailAndPhoneSchemeCase() {
+    #expect("MAILTO:User@Example.com".autoDetectedLink == "MAILTO:User@Example.com")
+    #expect("MaIlTo:User@Example.com?subject=Hello%20World".autoDetectedLink == "MaIlTo:User@Example.com?subject=Hello%20World")
+    #expect("TEL:+1234567890".autoDetectedLink == "TEL:+1234567890")
+    #expect("TeL:+1234567890;ext=123".autoDetectedLink == "TeL:+1234567890;ext=123")
+    #expect("  MAILTO:User@Example.com  ".autoDetectedLink == "MAILTO:User@Example.com")
+    #expect("\nTeL:+1234567890\n".autoDetectedLink == "TeL:+1234567890")
+}
+
 @Test func handlesEmptyAndWhitespace() {
     #expect("".autoDetectedLink == "")
     #expect("  ".autoDetectedLink == "")
