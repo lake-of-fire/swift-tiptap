@@ -204,7 +204,7 @@ struct EditorWebSurface {
                     // A binding can change before SwiftUI delivers its next
                     // representable update. Adopt that native target first,
                     // instead of overwriting it with an already queued edit.
-                    guard parent.htmlContent == (pendingContent ?? lastContentFromJS) else {
+                    guard parent.htmlContent.utf8.elementsEqual((pendingContent ?? lastContentFromJS).utf8) else {
                         replaceContentIfNeeded(parent.htmlContent, force: false)
                         return
                     }
@@ -234,9 +234,11 @@ struct EditorWebSurface {
         }
 
         func replaceContentIfNeeded(_ content: String, force: Bool) {
+            // HTML attributes can contain distinct URL paths whose Unicode text
+            // is canonically equivalent. Compare the serialized bytes throughout.
             // Compare with the pending native target too: A → B → A must retire
             // B even when A still equals the last delivered JavaScript value.
-            guard let webView, force || content != (pendingContent ?? lastContentFromJS) else { return }
+            guard let webView, force || !content.utf8.elementsEqual((pendingContent ?? lastContentFromJS).utf8) else { return }
             let generation = beginContentReplacement(content, in: webView)
             let escaped = EditorWebSurface.literal(content)
             webView.evaluateJavaScript("window.setContent(\(escaped), '\(generation)'); window.getContent()") { [weak self, weak webView] result, error in
@@ -249,13 +251,13 @@ struct EditorWebSurface {
                     self.pendingContent = nil
                     return
                 }
-                guard self.parent.htmlContent == content else {
+                guard self.parent.htmlContent.utf8.elementsEqual(content.utf8) else {
                     self.replaceContentIfNeeded(self.parent.htmlContent, force: false)
                     return
                 }
                 self.pendingContent = nil
                 self.lastContentFromJS = html
-                if self.parent.htmlContent != html { self.parent.htmlContent = html }
+                if !self.parent.htmlContent.utf8.elementsEqual(html.utf8) { self.parent.htmlContent = html }
                 if self.isEditorReady { self.parent.editorContext.markReady(webView) }
             }
         }
@@ -285,7 +287,7 @@ struct EditorWebSurface {
                 guard error == nil else { return }
                 // The binding may change while WebKit initializes. Never replace its
                 // newer value with the normalization of the previous content.
-                guard self.parent.htmlContent == content else {
+                guard self.parent.htmlContent.utf8.elementsEqual(content.utf8) else {
                     self.initializeEditor()
                     return
                 }

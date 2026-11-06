@@ -111,6 +111,23 @@ import Testing
 }
 
 @MainActor
+@Test func canonicalEquivalentURLChangeIsAnExactBodyEdit() {
+    let original = "<p><a href=\"https://example.com/caf\u{00e9}\">Link</a></p>"
+    let replacement = "<p><a href=\"https://example.com/cafe\u{0301}\">Link</a></p>"
+    let store = RichTextEditorSheetDraftStore(htmlContent: original)
+    store.syncFromEditor(original)
+    store.beginTrackingEdits()
+
+    store.syncFromEditor(replacement)
+
+    #expect(store.hasEdits)
+    #expect(Array(store.commit().utf8) == Array(replacement.utf8))
+    store.syncFromEditor(original)
+    #expect(!store.hasEdits)
+    #expect(Array(store.commit().utf8) == Array(original.utf8))
+}
+
+@MainActor
 @Test func firstInteractiveEditIsTrackedImmediately() {
     let store = RichTextEditorSheetDraftStore(htmlContent: "<p>Original</p>")
     store.beginTrackingEdits()

@@ -12,6 +12,38 @@ import UIKit
 /// Preserve the v4 read-only renderer's document/binding regression coverage
 /// while the editable surface moves from WKWebView to native text views.
 final class HTMLContentViewLifetimeTests: XCTestCase {
+
+    @MainActor
+    func testHostedHTMLContentReloadsCanonicallyEquivalentURLBytes() async throws {
+        let firstHeight = expectation(description: "Original document measured")
+        let replacementHeight = expectation(description: "Replacement document measured")
+        let original = "<p><a href=\"https://example.com/caf\u{00e9}\">Link</a></p>"
+        let replacement = "<p><a href=\"https://example.com/cafe\u{0301}\">Link</a></p>"
+        var height: CGFloat = 0
+        var awaitingReplacement = false
+        var didMeasureReplacement = false
+        let binding = Binding(get: { height }, set: { value in
+            if height == 0 && value > 0 { firstHeight.fulfill() }
+            height = value
+            if awaitingReplacement && !didMeasureReplacement {
+                didMeasureReplacement = true
+                replacementHeight.fulfill()
+            }
+        })
+        let mounted = MountedEditorView(HTMLContentView(htmlContent: original, contentHeight: binding)
+            .environment(\.colorScheme, .light))
+        defer { mounted.close() }
+        await fulfillment(of: [firstHeight], timeout: 15)
+        let webView = try XCTUnwrap(mounted.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? HTMLContentView.Coordinator)
+        awaitingReplacement = true
+        coordinator.loadContentIfNeeded(replacement, theme: "light", in: webView)
+        await fulfillment(of: [replacementHeight], timeout: 15)
+        let href = try await webView.evaluateJavaScript("document.querySelector('a').href") as? String
+        XCTAssertEqual(href, "https://example.com/cafe%CC%81")
+        XCTAssertTrue(mounted.webView === webView)
+    }
+
     @MainActor
     func testHostedHTMLContentWritesReplacementHeightBinding() async throws {
         let firstHeight = expectation(description: "Original HTML measured")
