@@ -298,7 +298,7 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
 
     var hasEdits: Bool {
         guard isTrackingEdits else { return false }
-        return draftHTMLContent != (editorBaselineHTMLContent ?? originalHTMLContent)
+        return !draftHTMLContent.utf8.elementsEqual((editorBaselineHTMLContent ?? originalHTMLContent).utf8)
     }
 
     func syncFromEditor(_ htmlContent: String) {

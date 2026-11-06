@@ -111,6 +111,23 @@ import Testing
 }
 
 @MainActor
+@Test func canonicalEquivalentURLChangeIsAnExactBodyEdit() {
+    let original = "<p><a href=\"https://example.com/caf\u{00e9}\">Link</a></p>"
+    let replacement = "<p><a href=\"https://example.com/cafe\u{0301}\">Link</a></p>"
+    let store = RichTextEditorSheetDraftStore(htmlContent: original)
+    store.syncFromEditor(original)
+    store.beginTrackingEdits()
+
+    store.syncFromEditor(replacement)
+
+    #expect(store.hasEdits)
+    #expect(Array(store.commit().utf8) == Array(replacement.utf8))
+    store.syncFromEditor(original)
+    #expect(!store.hasEdits)
+    #expect(Array(store.commit().utf8) == Array(original.utf8))
+}
+
+@MainActor
 @Test func firstInteractiveEditIsTrackedImmediately() {
     let store = RichTextEditorSheetDraftStore(htmlContent: "<p>Original</p>")
     store.beginTrackingEdits()
@@ -132,6 +149,132 @@ import WebKit
 import XCTest
 
 final class RichTextEditorReadinessTests: XCTestCase {
+
+    @MainActor
+    func testHostedEditorReplacesCanonicallyEquivalentURLBytes() async throws {
+        let ready = expectation(description: "Editor initialized")
+        let replaced = expectation(description: "Exact URL replacement reaches binding")
+        let original = "<p><a href=\"https://example.com/caf\u{00e9}\">Link</a></p>"
+        let replacement = "<p><a href=\"https://example.com/cafe\u{0301}\">Link</a></p>"
+        var content = original
+        var didReplace = false
+        let context = EditorContext()
+        let binding = Binding(get: { content }, set: { html in
+            content = html
+            if !didReplace, html.utf8.contains(0xCC) {
+                didReplace = true
+                replaced.fulfill()
+            }
+        })
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: binding, editorContext: context, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        content = replacement
+        mounted.replace(RichTextEditorView(htmlContent: binding, editorContext: context))
+        await fulfillment(of: [replaced], timeout: 5)
+        let href = try await webView.evaluateJavaScript("document.querySelector('.tiptap a').href") as? String
+        XCTAssertEqual(href, "https://example.com/cafe%CC%81")
+        let renderedHTML = try await webView.evaluateJavaScript("window.getContent()") as? String
+        let rendered = try XCTUnwrap(renderedHTML)
+        XCTAssertEqual(Array(content.utf8), Array(rendered.utf8))
+    }
+
+    @MainActor
+    func testHostedEditorKeepsExactURLBindingChangedDuringInitialization() async throws {
+        let ready = expectation(description: "Latest initialization completes")
+        let original = "<p><a href=\"https://example.com/caf\u{00e9}\">Link</a></p>"
+        let replacement = "<p><a href=\"https://example.com/cafe\u{0301}\">Link</a></p>"
+        var content = original
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { content }, set: { content = $0 }),
+            editorContext: context, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        var didReplace = false
+        let relay = EditorMessageRelay { controller, message in
+            if !didReplace,
+               (message.body as? [String: Any])?["contentGeneration"] as? String == coordinator.contentGeneration {
+                didReplace = true
+                XCTAssertFalse(coordinator.isEditorReady)
+                content = replacement
+            }
+            coordinator.userContentController(controller, didReceive: message)
+        }
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(relay, name: "contentChanged")
+        defer { controller.removeScriptMessageHandler(forName: "contentChanged") }
+        await fulfillment(of: [ready], timeout: 15)
+        XCTAssertTrue(didReplace)
+        let href = try await webView.evaluateJavaScript("document.querySelector('.tiptap a').href") as? String
+        XCTAssertEqual(href, "https://example.com/cafe%CC%81")
+        let renderedHTML = try await webView.evaluateJavaScript("window.getContent()") as? String
+        let rendered = try XCTUnwrap(renderedHTML)
+        XCTAssertEqual(Array(content.utf8), Array(rendered.utf8))
+    }
+
+    @MainActor
+    func testHostedEditorKeepsExactURLBindingChangedBeforeQueuedCallback() async throws {
+        let ready = expectation(description: "Editor initialized")
+        let replaced = expectation(description: "Pending native target adopted")
+        let published = expectation(description: "Replacement normalization reaches the binding")
+        var content = "<p>Original</p>"
+        let requested = "<p><a href=\"https://example.com/caf\u{00e9}\">Link</a></p>"
+        let replacement = "<p><a href=\"https://example.com/cafe\u{0301}\">Link</a></p>"
+        let context = EditorContext()
+        var didPublish = false
+        let binding = Binding(get: { content }, set: { html in
+            content = html
+            if !didPublish,
+               Data(html.utf8).range(of: Data("https://example.com/cafe\u{0301}".utf8)) != nil {
+                didPublish = true
+                published.fulfill()
+            }
+        })
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: binding, editorContext: context, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        var didReplace = false
+        let relay = EditorMessageRelay { controller, message in
+            if !didReplace,
+               let payload = message.body as? [String: Any],
+               payload["bridgeGeneration"] as? String == coordinator.bridgeGeneration,
+               payload["contentGeneration"] as? String == coordinator.contentGeneration,
+               let html = payload["html"] as? String,
+               Data(html.utf8).range(of: Data("https://example.com/caf\u{00e9}".utf8)) != nil {
+                didReplace = true
+                content = replacement
+                coordinator.userContentController(controller, didReceive: message)
+                XCTAssertEqual(Array(content.utf8), Array(replacement.utf8))
+                replaced.fulfill()
+                return
+            }
+            coordinator.userContentController(controller, didReceive: message)
+        }
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(relay, name: "contentChanged")
+        defer { controller.removeScriptMessageHandler(forName: "contentChanged") }
+        content = requested
+        mounted.replace(RichTextEditorView(htmlContent: binding, editorContext: context))
+        await fulfillment(of: [replaced, published], timeout: 5)
+        let href = try await webView.evaluateJavaScript("document.querySelector('.tiptap a').href") as? String
+        XCTAssertEqual(href, "https://example.com/cafe%CC%81")
+        let renderedHTML = try await webView.evaluateJavaScript("window.getContent()") as? String
+        let rendered = try XCTUnwrap(renderedHTML)
+        XCTAssertEqual(Array(content.utf8), Array(rendered.utf8))
+    }
+
     @MainActor
     func testHostedEditorInsertsImageWithMultilineQuotedAltThroughContext() async throws {
         let ready = expectation(description: "Editor initialized")
@@ -435,6 +578,38 @@ final class RichTextEditorReadinessTests: XCTestCase {
         XCTAssertEqual(content, "<p>Replacement during initialization</p>")
         let rendered = try await webView.evaluateJavaScript("window.getContent()") as? String
         XCTAssertEqual(rendered, content)
+    }
+
+
+    @MainActor
+    func testHostedHTMLContentReloadsCanonicallyEquivalentURLBytes() async throws {
+        let firstHeight = expectation(description: "Original document measured")
+        let replacementHeight = expectation(description: "Replacement document measured")
+        let original = "<p><a href=\"https://example.com/caf\u{00e9}\">Link</a></p>"
+        let replacement = "<p><a href=\"https://example.com/cafe\u{0301}\">Link</a></p>"
+        var height: CGFloat = 0
+        var awaitingReplacement = false
+        var didMeasureReplacement = false
+        let binding = Binding(get: { height }, set: { value in
+            if height == 0 && value > 0 { firstHeight.fulfill() }
+            height = value
+            if awaitingReplacement && !didMeasureReplacement {
+                didMeasureReplacement = true
+                replacementHeight.fulfill()
+            }
+        })
+        let mounted = MountedEditorView(HTMLContentView(htmlContent: original, contentHeight: binding)
+            .environment(\.colorScheme, .light))
+        defer { mounted.close() }
+        await fulfillment(of: [firstHeight], timeout: 15)
+        let webView = try XCTUnwrap(mounted.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? HTMLContentView.Coordinator)
+        awaitingReplacement = true
+        coordinator.loadContentIfNeeded(replacement, theme: "light", in: webView)
+        await fulfillment(of: [replacementHeight], timeout: 15)
+        let href = try await webView.evaluateJavaScript("document.querySelector('a').href") as? String
+        XCTAssertEqual(href, "https://example.com/cafe%CC%81")
+        XCTAssertTrue(mounted.webView === webView)
     }
 
     @MainActor

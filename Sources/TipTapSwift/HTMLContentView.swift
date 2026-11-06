@@ -164,7 +164,9 @@ public struct HTMLContentView {
 
         func loadContentIfNeeded(_ content: String, theme: String, in webView: WKWebView) {
             guard self.webView === webView else { return }
-            if renderGeneration != nil, renderedContent == content, renderedTheme == theme {
+            if renderGeneration != nil,
+                renderedContent.map({ $0.utf8.elementsEqual(content.utf8) }) == true,
+                renderedTheme == theme {
                 if let lastReportedHeight, parent.contentHeight != lastReportedHeight {
                     // A replacement binding needs the live height even when the
                     // document is unchanged. WebKit delivers asynchronously, so
