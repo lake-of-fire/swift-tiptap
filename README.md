@@ -51,6 +51,42 @@ struct EditorView: View {
 }
 ```
 
+### Persistent workspaces and undo
+
+Pass a stable `documentID` when reusing an editor for multiple documents. Change
+the ID when the selected document changes, even when the two documents contain
+identical HTML or use the same `EditorContext`:
+
+```swift
+RichTextEditorView(
+    htmlContent: $document.html,
+    documentID: document.id,
+    editorContext: context
+)
+```
+
+The ID is optional for a single-document editor. Keep it stable while editing;
+do not generate a new UUID each time the SwiftUI body runs. Changing the ID
+retires callbacks and commands from the previous document and clears its undo,
+redo, selection, and pending text formatting. The existing web view, focus,
+editability, and editor configuration are retained. Undo history is local to the
+currently loaded document and is not restored when returning to another document.
+
+Assigning different HTML through the binding also loads a new baseline and clears
+history. Loads normalize the HTML back into the binding without emitting a
+JavaScript edit event. Binding updates echoed from the editor do not reload the
+document or clear its history.
+
+Use the command context for an **undoable programmatic edit**, such as accepting
+an AI rewrite. Each replacement is one undo step, separate from surrounding
+typing and other replacements:
+
+```swift
+context.replaceContent(with: rewrittenHTML)
+context.undo()
+context.redo()
+```
+
 ### Editor Sheet
 
 ```swift

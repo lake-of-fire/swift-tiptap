@@ -30,6 +30,7 @@ import AppKit
 @MainActor
 public struct RichTextEditorView {
     @Binding var htmlContent: String
+    var documentID: AnyHashable?
     var placeholder: String?
     var editorContext: EditorContext?
     var onEditorReady: (() -> Void)?
@@ -39,16 +40,21 @@ public struct RichTextEditorView {
     /// Creates a rich text editor.
     /// - Parameters:
     ///   - htmlContent: Bidirectional binding to the HTML content string.
+    ///     Assigning a new value loads a new baseline and clears undo/redo history.
+    ///   - documentID: Stable identity of the document being edited. Change this
+    ///     when switching documents, including documents with identical HTML.
     ///   - placeholder: Placeholder text shown when the editor is empty.
     ///   - editorContext: Optional context for driving formatting from native controls.
     ///   - onEditorReady: Called once the TipTap editor has fully initialized.
     public init(
         htmlContent: Binding<String>,
+        documentID: AnyHashable? = nil,
         placeholder: String? = nil,
         editorContext: EditorContext? = nil,
         onEditorReady: (() -> Void)? = nil
     ) {
         self._htmlContent = htmlContent
+        self.documentID = documentID
         self.placeholder = placeholder
         self.editorContext = editorContext
         self.onEditorReady = onEditorReady
@@ -98,6 +104,7 @@ public struct RichTextEditorView {
 
     @MainActor
     private func applyContentIfNeeded(in webView: WKWebView, coordinator: Coordinator) {
+        let documentChanged = coordinator.parent.documentID != documentID
         let contextChanged = coordinator.parent.editorContext !== editorContext
         if contextChanged {
             coordinator.parent.editorContext?.unbind(from: webView)
@@ -115,7 +122,7 @@ public struct RichTextEditorView {
         }
 
         if coordinator.isEditorReady {
-            coordinator.replaceContentIfNeeded(htmlContent, force: contextChanged)
+            coordinator.replaceContentIfNeeded(htmlContent, force: documentChanged || contextChanged)
         }
     }
 
@@ -198,8 +205,8 @@ public struct RichTextEditorView {
             guard let webView, message.webView === webView, message.frameInfo.isMainFrame else { return }
             switch message.name {
             case "contentChanged":
-                // Initialization publishes its normalized result once, before readiness.
-                // TipTap can also emit contentChanged while setContent is in flight.
+                // Native loads publish normalization through their completion.
+                // Only edits arrive here, potentially while a load is in flight.
                 if isEditorReady,
                    let payload = message.body as? [String: Any],
                    payload["bridgeGeneration"] as? String == bridgeGeneration,
@@ -237,11 +244,10 @@ public struct RichTextEditorView {
             guard let webView, force || content != (pendingContent ?? lastContentFromJS) else { return }
             let generation = beginContentReplacement(content, in: webView)
             let escaped = RichTextEditorView.escapeForJS(content)
-            webView.evaluateJavaScript("window.setContent('\(escaped)', '\(generation)'); window.getContent()") { [weak self, weak webView] result, error in
+            webView.evaluateJavaScript("window.loadContent('\(escaped)', '\(generation)'); window.getContent()") { [weak self, weak webView] result, error in
                 guard let self, let webView, self.webView === webView,
                       self.contentGeneration == generation else { return }
-                // A no-op setContent need not emit an update. Publish its
-                // normalization only while the requested binding value remains
+                // Loading is silent. Publish normalization only while its binding remains
                 // current; a later native value or user edit owns its own result.
                 guard error == nil, let html = result as? String else {
                     self.pendingContent = nil
@@ -271,9 +277,11 @@ public struct RichTextEditorView {
             let theme = parent.colorScheme == .dark ? "dark" : "light"
             currentTheme = theme
             let content = parent.htmlContent
+            let documentID = parent.documentID
+            let editorContext = parent.editorContext
             let generation = beginContentReplacement(content, in: webView)
             let escaped = RichTextEditorView.escapeForJS(content)
-            webView.evaluateJavaScript("window.setTheme('\(theme)'); window.setContent('\(escaped)', '\(generation)'); window.getContent()") { [weak self, weak webView] result, error in
+            webView.evaluateJavaScript("window.setTheme('\(theme)'); window.loadContent('\(escaped)', '\(generation)'); window.getContent()") { [weak self, weak webView] result, error in
                 guard let self, let webView, self.webView === webView,
                       self.contentGeneration == generation else { return }
                 self.isInitializingEditor = false
@@ -281,7 +289,9 @@ public struct RichTextEditorView {
                 guard error == nil else { return }
                 // The binding may change while WebKit initializes. Never replace its
                 // newer value with the normalization of the previous content.
-                guard self.parent.htmlContent == content else {
+                guard self.parent.documentID == documentID,
+                      self.parent.editorContext === editorContext,
+                      self.parent.htmlContent == content else {
                     self.initializeEditor()
                     return
                 }

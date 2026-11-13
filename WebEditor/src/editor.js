@@ -5,6 +5,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
 import Underline from '@tiptap/extension-underline';
+import { EditorState } from '@tiptap/pm/state'
+import { closeHistory } from '@tiptap/pm/history'
 
 // Keep ruby markup editable and serializable, including its reading and fallback text.
 const Ruby = Node.create({
@@ -52,13 +54,29 @@ window.initEditor = function(content, placeholder) {
     onCreate: () => { window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration }); },
   });
 };
-window.setContent = function(html, generation) {
-  if (!editor) return;
-  if (typeof generation === 'string') contentGeneration = generation;
-  // TipTap 3 takes an options object. Native replacement and direct editor
-  // commands both publish normalized HTML under the current content owner.
-  editor.commands.setContent(html, { emitUpdate: true });
-};
+window.loadContent = function(html, generation) {
+  if (!editor) return
+  contentGeneration = generation
+  // Loading establishes a baseline, not an edit. Let TipTap normalize the
+  // document, then reset plugin state as well as selection and stored marks.
+  // Merely setting addToHistory:false leaves undo/redo from the previous doc.
+  editor.commands.setContent(html, { emitUpdate: false })
+  editor.view.updateState(EditorState.create({
+    schema: editor.state.schema,
+    doc: editor.state.doc,
+    plugins: editor.state.plugins,
+  }))
+}
+window.setContent = function(html) {
+  if (!editor) return
+  // Programmatic edits (for example, accepting a rewrite) are one undo step,
+  // independent of the typing or replacements immediately before and after.
+  editor.view.dispatch(closeHistory(editor.state.tr))
+  editor.commands.setContent(html, { emitUpdate: true })
+  editor.view.dispatch(closeHistory(editor.state.tr))
+}
+window.undo = function() { return editor ? editor.commands.undo() : false }
+window.redo = function() { return editor ? editor.commands.redo() : false }
 window.isEditorContentGeneration = function(generation) { return generation === contentGeneration; };
 window.getContent = function() { return editor ? editor.getHTML() : ''; };
 window.setEditable = function(value) { if (editor) editor.setEditable(value); };

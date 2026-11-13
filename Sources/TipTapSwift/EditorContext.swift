@@ -43,6 +43,23 @@ public final class EditorContext: ObservableObject {
 
     public init() {}
 
+    // MARK: - History
+
+    public func undo() {
+        run("window.undo()")
+    }
+
+    public func redo() {
+        run("window.redo()")
+    }
+
+    /// Replaces the current document as a single undoable edit.
+    /// Use the view's HTML binding to load a new baseline instead.
+    public func replaceContent(with html: String) {
+        let escaped = RichTextEditorView.escapeForJS(html)
+        run("window.setContent('\(escaped)')")
+    }
+
     // MARK: - Inline Formatting
 
     public func toggleBold() {
