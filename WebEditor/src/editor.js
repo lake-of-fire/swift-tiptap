@@ -27,10 +27,16 @@ const RubyParenthesis = Node.create({
 
 let editor = null;
 const bridgeGeneration = window.__tipTapBridgeGeneration;
+// A WKWebView can host multiple page lifetimes. Queued native work must name
+// the page it came from before it is allowed to mutate a replacement page.
+const pageGeneration = Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join('-')
 let contentGeneration = null;
 window.initEditor = function(content, placeholder) {
   editor = new Editor({
     element: document.querySelector('#editor'),
+    // Native initialization installs the authoritative binding before enabling
+    // input, so typing cannot be discarded while the first baseline is loading.
+    editable: false,
     extensions: [
       StarterKit, Ruby, RubyText, RubyParenthesis,
       Link.configure({
@@ -51,9 +57,14 @@ window.initEditor = function(content, placeholder) {
       const html = editor.getHTML();
       window.webkit.messageHandlers.contentChanged.postMessage({ bridgeGeneration, contentGeneration, html });
     },
-    onCreate: () => { window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration }); },
+    onCreate: () => { window.requestEditorReady() },
   });
 };
+window.requestEditorReady = function() {
+  if (!editor) return
+  window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration, pageGeneration })
+}
+window.isEditorPageGeneration = function(generation) { return !!editor && generation === pageGeneration }
 window.loadContent = function(html, generation) {
   if (!editor) return
   contentGeneration = generation
@@ -85,7 +96,7 @@ window.undo = function() { return editor ? editor.commands.undo() : false }
 window.redo = function() { return editor ? editor.commands.redo() : false }
 window.isEditorContentGeneration = function(generation) { return generation === contentGeneration; };
 window.getContent = function() { return editor ? editor.getHTML() : ''; };
-window.setEditable = function(value) { if (editor) editor.setEditable(value); };
+window.setEditable = function(value) { if (editor) editor.setEditable(value, false) }
 window.focus = function() { if (editor) editor.commands.focus(); };
 window.isActive = function(name, attrs) { return editor ? editor.isActive(name, attrs) : false; };
 window.setTheme = function(theme) { document.documentElement.setAttribute('data-theme', theme); };

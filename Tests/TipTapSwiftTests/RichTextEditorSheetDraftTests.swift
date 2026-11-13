@@ -308,6 +308,120 @@ final class RichTextEditorReadinessTests: XCTestCase {
     }
 
     @MainActor
+    func testHostedEditorRecoversLatestBindingAfterPageLossAndRejectsRetiredReadiness() async throws {
+        let ready = expectation(description: "Initial page initialized")
+        let edited = expectation(description: "Last edit acknowledged by the binding")
+        let replacementPage = expectation(description: "Replacement page announces readiness")
+        let recovered = expectation(description: "Replacement page restored the current binding")
+        let resumedEdit = expectation(description: "Context works after recovery")
+        var content = "<p>Original</p>"
+        var readinessCount = 0
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { content }, set: { html in
+                content = html
+                if html == "<p>Acknowledged edit</p>" { edited.fulfill() }
+                if html == "<p>Editing after recovery</p>" { resumedEdit.fulfill() }
+            }),
+            documentID: "document", editorContext: context,
+            onEditorReady: {
+                readinessCount += 1
+                if readinessCount == 1 { ready.fulfill() }
+                else if readinessCount == 2 { recovered.fulfill() }
+            }
+        ))
+        defer { mounted.close() }
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        let controller = webView.configuration.userContentController
+        var firstReady: WKScriptMessage?
+        var lastEdit: WKScriptMessage?
+        var holdReplacementReadiness = false
+        var sawReplacementReadiness = false
+        let readinessRelay = EditorMessageRelay { controller, message in
+            if firstReady == nil { firstReady = message }
+            if holdReplacementReadiness {
+                if !sawReplacementReadiness {
+                    sawReplacementReadiness = true
+                    replacementPage.fulfill()
+                }
+                return
+            }
+            coordinator.userContentController(controller, didReceive: message)
+        }
+        let editRelay = EditorMessageRelay { controller, message in
+            lastEdit = message
+            if !coordinator.isEditorReady {
+                context.replaceContent(with: "<p>Command before native readiness</p>")
+            }
+            coordinator.userContentController(controller, didReceive: message)
+        }
+        controller.removeScriptMessageHandler(forName: "editorReady")
+        controller.add(readinessRelay, name: "editorReady")
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(editRelay, name: "contentChanged")
+        defer {
+            controller.removeScriptMessageHandler(forName: "editorReady")
+            controller.removeScriptMessageHandler(forName: "contentChanged")
+        }
+        await fulfillment(of: [ready], timeout: 15)
+        let oldReady = try XCTUnwrap(firstReady)
+        let oldPage = try XCTUnwrap((oldReady.body as? [String: Any])?["pageGeneration"] as? String)
+        let oldGeneration = coordinator.contentGeneration
+        let retainedContext = EditorContext()
+        retainedContext.bind(to: webView, contentGeneration: oldGeneration)
+        context.replaceContent(with: "<p>Acknowledged edit</p>")
+        await fulfillment(of: [edited], timeout: 5)
+        let oldEdit = try XCTUnwrap(lastEdit)
+
+        holdReplacementReadiness = true
+        // Exercise the public delegate recovery path without killing another
+        // WebKit process in the test runner. It must load a new editor page.
+        coordinator.webViewWebContentProcessDidTerminate(webView)
+        XCTAssertFalse(coordinator.isEditorReady)
+        XCTAssertNotEqual(coordinator.contentGeneration, oldGeneration)
+        // The previous JS document can still be executable while navigation is
+        // provisional. Its readiness must not rearm the retired native page.
+        coordinator.userContentController(controller, didReceive: oldReady)
+        coordinator.userContentController(controller, didReceive: oldEdit)
+        XCTAssertNil(coordinator.currentTheme)
+        await fulfillment(of: [replacementPage], timeout: 15)
+        let awaitingBaseline = try await webView.evaluateJavaScript(
+            "document.querySelector('.tiptap').getAttribute('contenteditable')"
+        ) as? String
+        XCTAssertEqual(awaitingBaseline, "false", "Input must remain disabled until native initialization finishes")
+        XCTAssertEqual(content, "<p>Acknowledged edit</p>")
+        try await webView.evaluateJavaScript(nativeLoadProbe)
+
+        // A newer native value wins even if it arrived while WebKit was down.
+        content = "<p>Latest native value</p>"
+        holdReplacementReadiness = false
+        coordinator.userContentController(controller, didReceive: oldReady)
+        coordinator.userContentController(controller, didReceive: oldEdit)
+        await fulfillment(of: [recovered], timeout: 15)
+        retainedContext.replaceContent(with: "<p>Retired command</p>")
+        let result = try await webView.evaluateJavaScript("""
+            (() => {
+                if (window.isEditorPageGeneration('\(oldPage)')) {
+                    window.loadContent('<p>Retired load</p>', '\(oldGeneration)')
+                }
+                return [window.getContent(), window.undo(), window.redo(),
+                    document.querySelector('.tiptap').getAttribute('contenteditable')]
+            })()
+            """) as? [Any]
+        let values = try XCTUnwrap(result)
+        XCTAssertEqual(values[0] as? String, "<p>Latest native value</p>")
+        XCTAssertEqual(values[1] as? Bool, false)
+        XCTAssertEqual(values[2] as? Bool, false)
+        XCTAssertEqual(values[3] as? String, "true")
+        XCTAssertEqual(content, "<p>Latest native value</p>")
+        XCTAssertEqual(readinessCount, 2)
+        XCTAssertTrue(context.webView === webView)
+        context.replaceContent(with: "<p>Editing after recovery</p>")
+        await fulfillment(of: [resumedEdit], timeout: 5)
+    }
+
+    @MainActor
     func testHostedEditorInsertsImageWithMultilineQuotedAltThroughContext() async throws {
         let ready = expectation(description: "Editor initialized")
         let inserted = expectation(description: "Image insertion reaches the binding")
@@ -949,7 +1063,9 @@ final class RichTextEditorReadinessTests: XCTestCase {
                 bridgeGeneration: '\(coordinator.bridgeGeneration)',
                 contentGeneration: '\(coordinator.contentGeneration)', html: '<p>Retired</p>'
             });
-            window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration: '\(coordinator.bridgeGeneration)' });
+            window.webkit.messageHandlers.editorReady.postMessage({
+                bridgeGeneration: '\(coordinator.bridgeGeneration)', pageGeneration: 'captured-page'
+            });
             window.webkit.messageHandlers.heightChanged.postMessage(123);
             </script>
             """

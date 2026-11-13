@@ -104,6 +104,13 @@ context.undo()
 context.redo()
 ```
 
+If WebKit reloads the editor page or terminates its content process, the wrapper
+restores the latest value in the native HTML binding as a new baseline. Old page
+callbacks and queued loads cannot overwrite the replacement page. `onEditorReady`
+runs again after recovery. Input stays disabled and context commands are ignored
+until that baseline is installed. JavaScript undo history, selection, and edits not yet delivered to the
+native binding cannot survive a terminated web process.
+
 ### Editor Sheet
 
 ```swift
