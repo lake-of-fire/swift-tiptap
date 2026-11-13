@@ -58,17 +58,33 @@ the ID when the selected document changes, even when the two documents contain
 identical HTML or use the same `EditorContext`:
 
 ```swift
+// Here documents is a [UUID: String] store. Capture the selected ID when
+// constructing the view, and use that same ID for both reads and writes.
+let editingID = selectedDocumentID
 RichTextEditorView(
-    htmlContent: $document.html,
-    documentID: document.id,
+    htmlContent: Binding(
+        get: { documents[editingID] ?? "" },
+        set: { html in
+            guard documents[editingID] != nil else { return }
+            documents[editingID] = html
+        }
+    ),
+    documentID: editingID,
     editorContext: context
 )
 ```
 
+The binding must stay scoped to that document: capture a stable document object
+or ID in its getter and setter. Do not resolve the current selection inside those
+closures. SwiftUI delivers view updates asynchronously, so `documentID` retires
+the old editor generation when that update arrives. A callback delivered before
+the update still uses the old binding; a document-scoped binding keeps it from
+writing to the newly selected document, including when the HTML is identical.
+
 The ID is optional for a single-document editor. Keep it stable while editing;
 do not generate a new UUID each time the SwiftUI body runs. Changing the ID
-retires callbacks and commands from the previous document and clears its undo,
-redo, selection, and pending text formatting. The existing web view, focus,
+through a view update retires callbacks and commands from the previous document
+and clears its undo, redo, selection, and pending text formatting. The existing web view, focus,
 editability, and editor configuration are retained. Undo history is local to the
 currently loaded document and is not restored when returning to another document.
 
@@ -79,7 +95,8 @@ document or clear its history.
 
 Use the command context for an **undoable programmatic edit**, such as accepting
 an AI rewrite. Each replacement is one undo step, separate from surrounding
-typing and other replacements:
+typing and other replacements. Replacements that parse to the current document
+leave undo/redo history and selection unchanged:
 
 ```swift
 context.replaceContent(with: rewrittenHTML)

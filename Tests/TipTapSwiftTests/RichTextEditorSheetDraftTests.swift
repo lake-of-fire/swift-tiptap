@@ -188,6 +188,39 @@ final class RichTextEditorReadinessTests: XCTestCase {
     }
 
     @MainActor
+    func testHostedEditorPreservesRedoForEquivalentProgrammaticReplacement() async throws {
+        let ready = expectation(description: "Baseline loaded")
+        var content = "<p><strong>Baseline</strong></p>"
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { content }, set: { content = $0 }),
+            editorContext: context, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+
+        context.replaceContent(with: "<p>Rewrite</p>")
+        context.undo()
+        // Equivalent HTML must behave like an exact no-op, including preserving
+        // the redo branch and avoiding a phantom undo step with unchanged text.
+        context.replaceContent(with: "<p><b>Baseline</b></p>")
+        let history = try await webView.evaluateJavaScript("""
+            (() => {
+                const values = [window.redo(), window.getContent()]
+                values.push(window.undo(), window.getContent(), window.undo())
+                return values
+            })()
+            """) as? [Any]
+        let values = try XCTUnwrap(history)
+        XCTAssertEqual(values[0] as? Bool, true)
+        XCTAssertEqual(values[1] as? String, "<p>Rewrite</p>")
+        XCTAssertEqual(values[2] as? Bool, true)
+        XCTAssertEqual(values[3] as? String, "<p><strong>Baseline</strong></p>")
+        XCTAssertEqual(values[4] as? Bool, false)
+    }
+
+    @MainActor
     func testHostedEditorSwitchesEqualHTMLDocumentWithSharedContextAndRejectsRetainedEdits() async throws {
         let ready = expectation(description: "First document initialized")
         let edited = expectation(description: "First document edit retained")

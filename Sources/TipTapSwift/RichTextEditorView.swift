@@ -41,6 +41,8 @@ public struct RichTextEditorView {
     /// - Parameters:
     ///   - htmlContent: Bidirectional binding to the HTML content string.
     ///     Assigning a new value loads a new baseline and clears undo/redo history.
+    ///     Its getter and setter must capture a stable document or ID, rather
+    ///     than redirecting through a selection that can change before a view update.
     ///   - documentID: Stable identity of the document being edited. Change this
     ///     when switching documents, including documents with identical HTML.
     ///   - placeholder: Placeholder text shown when the editor is empty.

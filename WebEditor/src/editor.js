@@ -1,4 +1,4 @@
-import { Editor, Node } from '@tiptap/core';
+import { Editor, Node, createDocument } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -69,10 +69,16 @@ window.loadContent = function(html, generation) {
 }
 window.setContent = function(html) {
   if (!editor) return
+  const document = createDocument(html, editor.schema, {}, {
+    errorOnInvalidContent: editor.options.enableContentCheck,
+  })
+  // An equivalent replacement must not consume an undo step or discard redo.
+  // Compare parsed documents so equivalent markup (such as b/strong) is a no-op.
+  if (document.eq(editor.state.doc)) return
   // Programmatic edits (for example, accepting a rewrite) are one undo step,
   // independent of the typing or replacements immediately before and after.
   editor.view.dispatch(closeHistory(editor.state.tr))
-  editor.commands.setContent(html, { emitUpdate: true })
+  editor.commands.setContent(document, { emitUpdate: true })
   editor.view.dispatch(closeHistory(editor.state.tr))
 }
 window.undo = function() { return editor ? editor.commands.undo() : false }
