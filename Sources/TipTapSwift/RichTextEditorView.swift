@@ -30,6 +30,7 @@ import AppKit
 @MainActor
 public struct RichTextEditorView {
     @Binding var htmlContent: String
+    var documentID: AnyHashable?
     var placeholder: String?
     var editorContext: EditorContext?
     var onEditorReady: (() -> Void)?
@@ -39,16 +40,25 @@ public struct RichTextEditorView {
     /// Creates a rich text editor.
     /// - Parameters:
     ///   - htmlContent: Bidirectional binding to the HTML content string.
+    ///     Assigning a new value loads a new baseline and clears undo/redo history.
+    ///     Its getter and setter must capture a stable document or ID, rather
+    ///     than redirecting through a selection that can change before a view update.
+    ///   - documentID: Stable identity of the document being edited. Change this
+    ///     when switching documents, including documents with identical HTML.
     ///   - placeholder: Placeholder text shown when the editor is empty.
     ///   - editorContext: Optional context for driving formatting from native controls.
-    ///   - onEditorReady: Called once the TipTap editor has fully initialized.
+    ///   - onEditorReady: Called after each page has initialized, including recovery
+    ///     after WebKit reloads or its content process terminates.
+    ///     Editing and context commands remain disabled until initialization completes.
     public init(
         htmlContent: Binding<String>,
+        documentID: AnyHashable? = nil,
         placeholder: String? = nil,
         editorContext: EditorContext? = nil,
         onEditorReady: (() -> Void)? = nil
     ) {
         self._htmlContent = htmlContent
+        self.documentID = documentID
         self.placeholder = placeholder
         self.editorContext = editorContext
         self.onEditorReady = onEditorReady
@@ -86,6 +96,10 @@ public struct RichTextEditorView {
         editorContext?.bind(to: webView, contentGeneration: nil)
         #endif
 
+        Self.loadEditor(in: webView)
+    }
+
+    private static func loadEditor(in webView: WKWebView) {
         if let resourceURL = Bundle.module.url(
             forResource: "tiptap-editor",
             withExtension: "html",
@@ -98,10 +112,13 @@ public struct RichTextEditorView {
 
     @MainActor
     private func applyContentIfNeeded(in webView: WKWebView, coordinator: Coordinator) {
+        let documentChanged = coordinator.parent.documentID != documentID
         let contextChanged = coordinator.parent.editorContext !== editorContext
         if contextChanged {
             coordinator.parent.editorContext?.unbind(from: webView)
-            editorContext?.bind(to: webView, contentGeneration: coordinator.contentGeneration)
+            editorContext?.bind(
+                to: webView, contentGeneration: coordinator.isEditorReady ? coordinator.contentGeneration : nil
+            )
             #if canImport(UIKit)
             coordinator.accessoryView = editorContext.map { FormattingAccessoryView(context: $0) }
             Self.installInputAccessoryView(coordinator, on: webView)
@@ -115,7 +132,7 @@ public struct RichTextEditorView {
         }
 
         if coordinator.isEditorReady {
-            coordinator.replaceContentIfNeeded(htmlContent, force: contextChanged)
+            coordinator.replaceContentIfNeeded(htmlContent, force: documentChanged || contextChanged)
         }
     }
 
@@ -183,7 +200,10 @@ public struct RichTextEditorView {
         var isEditorReady = false
         var currentTheme: String?
         private var isInitializingEditor = false
+        private var acceptsEditorReadiness = false
+        private var activeNavigation: WKNavigation?
         let bridgeGeneration = UUID().uuidString
+        private var editorPageGeneration: String?
         private(set) var contentGeneration = UUID().uuidString
         private var pendingContent: String?
 
@@ -198,8 +218,8 @@ public struct RichTextEditorView {
             guard let webView, message.webView === webView, message.frameInfo.isMainFrame else { return }
             switch message.name {
             case "contentChanged":
-                // Initialization publishes its normalized result once, before readiness.
-                // TipTap can also emit contentChanged while setContent is in flight.
+                // Native loads publish normalization through their completion.
+                // Only edits arrive here, potentially while a load is in flight.
                 if isEditorReady,
                    let payload = message.body as? [String: Any],
                    payload["bridgeGeneration"] as? String == bridgeGeneration,
@@ -218,10 +238,11 @@ public struct RichTextEditorView {
                 }
 
             case "editorReady":
-                guard !isEditorReady, !isInitializingEditor,
+                guard acceptsEditorReadiness, !isEditorReady, !isInitializingEditor,
                       let payload = message.body as? [String: Any],
-                      payload["bridgeGeneration"] as? String == bridgeGeneration else { return }
-                initializeEditor()
+                      payload["bridgeGeneration"] as? String == bridgeGeneration,
+                      let pageGeneration = payload["pageGeneration"] as? String else { return }
+                initializeEditor(pageGeneration: pageGeneration)
 
             case "editorHeightChanged":
                 break
@@ -234,14 +255,22 @@ public struct RichTextEditorView {
         func replaceContentIfNeeded(_ content: String, force: Bool) {
             // Compare with the pending native target too: A → B → A must retire
             // B even when A still equals the last delivered JavaScript value.
-            guard let webView, force || content != (pendingContent ?? lastContentFromJS) else { return }
+            guard let webView, let pageGeneration = editorPageGeneration,
+                  force || content != (pendingContent ?? lastContentFromJS) else { return }
             let generation = beginContentReplacement(content, in: webView)
             let escaped = RichTextEditorView.escapeForJS(content)
-            webView.evaluateJavaScript("window.setContent('\(escaped)', '\(generation)'); window.getContent()") { [weak self, weak webView] result, error in
+            let escapedPage = RichTextEditorView.escapeForJS(pageGeneration)
+            let script = """
+                (() => {
+                    if (!window.isEditorPageGeneration?.('\(escapedPage)')) return null
+                    window.loadContent('\(escaped)', '\(generation)')
+                    return window.getContent()
+                })()
+                """
+            webView.evaluateJavaScript(script) { [weak self, weak webView] result, error in
                 guard let self, let webView, self.webView === webView,
                       self.contentGeneration == generation else { return }
-                // A no-op setContent need not emit an update. Publish its
-                // normalization only while the requested binding value remains
+                // Loading is silent. Publish normalization only while its binding remains
                 // current; a later native value or user edit owns its own result.
                 guard error == nil, let html = result as? String else {
                     self.pendingContent = nil
@@ -261,36 +290,67 @@ public struct RichTextEditorView {
             // Retire queued edits before submitting the asynchronous replacement.
             contentGeneration = UUID().uuidString
             pendingContent = content
-            parent.editorContext?.bind(to: webView, contentGeneration: contentGeneration)
+            if isEditorReady {
+                parent.editorContext?.bind(to: webView, contentGeneration: contentGeneration)
+            }
             return contentGeneration
         }
 
-        private func initializeEditor() {
+        private func initializeEditor(pageGeneration: String) {
             guard let webView else { return }
             isInitializingEditor = true
+            editorPageGeneration = pageGeneration
             let theme = parent.colorScheme == .dark ? "dark" : "light"
             currentTheme = theme
             let content = parent.htmlContent
+            let documentID = parent.documentID
+            let editorContext = parent.editorContext
             let generation = beginContentReplacement(content, in: webView)
             let escaped = RichTextEditorView.escapeForJS(content)
-            webView.evaluateJavaScript("window.setTheme('\(theme)'); window.setContent('\(escaped)', '\(generation)'); window.getContent()") { [weak self, weak webView] result, error in
+            let escapedPage = RichTextEditorView.escapeForJS(pageGeneration)
+            let script = """
+                (() => {
+                    if (!window.isEditorPageGeneration?.('\(escapedPage)')) return null
+                    window.setTheme('\(theme)')
+                    window.loadContent('\(escaped)', '\(generation)')
+                    return window.getContent()
+                })()
+                """
+            webView.evaluateJavaScript(script) { [weak self, weak webView] result, error in
                 guard let self, let webView, self.webView === webView,
                       self.contentGeneration == generation else { return }
                 self.isInitializingEditor = false
                 self.pendingContent = nil
                 guard error == nil else { return }
-                // The binding may change while WebKit initializes. Never replace its
-                // newer value with the normalization of the previous content.
-                guard self.parent.htmlContent == content else {
-                    self.initializeEditor()
+                guard let html = result as? String else {
+                    // A retired page's readiness can arrive after navigation.
+                    // Ask the current page to announce itself again if its
+                    // original announcement raced this stale initialization.
+                    self.editorPageGeneration = nil
+                    webView.evaluateJavaScript("window.requestEditorReady?.()") { _, _ in }
                     return
                 }
-                if let html = result as? String {
-                    self.lastContentFromJS = html
-                    self.parent.htmlContent = html
+                // The binding may change while WebKit initializes. Never replace its
+                // newer value with the normalization of the previous content.
+                guard self.parent.documentID == documentID,
+                      self.parent.editorContext === editorContext,
+                      self.parent.htmlContent == content else {
+                    self.initializeEditor(pageGeneration: pageGeneration)
+                    return
                 }
+                self.lastContentFromJS = html
+                self.parent.htmlContent = html
                 guard self.webView === webView else { return }
+                self.parent.editorContext?.bind(to: webView, contentGeneration: generation)
                 self.isEditorReady = true
+                // Native is now ready to accept edit messages. Enabling input
+                // before this point could discard typing during initialization.
+                webView.evaluateJavaScript("""
+                    if (window.isEditorPageGeneration?.('\(escapedPage)') &&
+                        window.isEditorContentGeneration?.('\(generation)')) {
+                        window.setEditable(true)
+                    }
+                    """) { _, _ in }
                 self.parent.onEditorReady?()
             }
         }
@@ -301,6 +361,58 @@ public struct RichTextEditorView {
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             ))
+        }
+
+        private func retireEditorPage(in webView: WKWebView) {
+            acceptsEditorReadiness = false
+            activeNavigation = nil
+            isEditorReady = false
+            isInitializingEditor = false
+            editorPageGeneration = nil
+            contentGeneration = UUID().uuidString
+            pendingContent = nil
+            currentTheme = nil
+            parent.editorContext?.bind(to: webView, contentGeneration: nil)
+        }
+
+        public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            guard self.webView === webView else { return }
+            retireEditorPage(in: webView)
+            activeNavigation = navigation
+        }
+
+        private func resumeEditorPage(in webView: WKWebView, navigation: WKNavigation?) {
+            guard self.webView === webView, let navigation, activeNavigation === navigation else { return }
+            activeNavigation = nil
+            acceptsEditorReadiness = true
+            // Old JavaScript can remain executable during provisional loading.
+            // Wait for navigation to finish before accepting any page's readiness,
+            // then request a fresh announcement in case onCreate ran earlier.
+            webView.evaluateJavaScript("window.requestEditorReady?.()") { _, _ in }
+        }
+
+        public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            resumeEditorPage(in: webView, navigation: navigation)
+        }
+
+        public func webView(
+            _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
+        ) {
+            // A failed provisional navigation may leave the previous document
+            // alive. Reinitialize that page from the latest native binding.
+            resumeEditorPage(in: webView, navigation: navigation)
+        }
+
+        public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            resumeEditorPage(in: webView, navigation: navigation)
+        }
+
+        public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard self.webView === webView else { return }
+            // Keep the latest native binding; JavaScript history died with the
+            // page. Reload the bundled editor even if the first load never committed.
+            retireEditorPage(in: webView)
+            RichTextEditorView.loadEditor(in: webView)
         }
 
         @MainActor
