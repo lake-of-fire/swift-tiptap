@@ -2,6 +2,47 @@ import Testing
 @testable import TipTapSwift
 
 @MainActor
+@Test func htmlSourceIdentityUsesExactUTF8RatherThanCanonicalEquality() {
+    let composed = "<p>\u{304C}</p>"
+    let decomposed = "<p>\u{304B}\u{3099}</p>"
+    #expect(composed == decomposed)
+    #expect(composed.utf16.count != decomposed.utf16.count)
+    #expect(!RichTextEditorView.hasIdenticalHTMLBytes(composed, decomposed))
+    #expect(RichTextEditorView.hasIdenticalHTMLBytes(composed, composed))
+}
+
+
+@MainActor
+@Test func canonicalEquivalentDraftEditCommitsItsExactBytes() {
+    let original = "<p>\u{304C}</p>"
+    let edited = "<p>\u{304B}\u{3099}</p>"
+    let store = RichTextEditorSheetDraftStore(htmlContent: original)
+    store.syncFromEditor(original)
+    store.beginTrackingEdits()
+    store.syncFromEditor(edited)
+
+    #expect(store.hasEdits)
+    #expect(store.commit().utf8.elementsEqual(edited.utf8))
+    #expect(!store.commit().utf8.elementsEqual(original.utf8))
+
+    store.syncFromEditor(original)
+    #expect(!store.hasEdits)
+    #expect(store.commit().utf8.elementsEqual(original.utf8))
+}
+
+@MainActor
+@Test func initialCanonicalNormalizationStillPreservesOriginalSourceOnCommit() {
+    let original = "<p>\u{304C}</p>"
+    let normalized = "<p>\u{304B}\u{3099}</p>"
+    let store = RichTextEditorSheetDraftStore(htmlContent: original)
+    store.syncFromEditor(normalized)
+    store.beginTrackingEdits()
+
+    #expect(!store.hasEdits)
+    #expect(store.commit().utf8.elementsEqual(original.utf8))
+}
+
+@MainActor
 @Test func draftStoreStartsWithOriginalHTML() {
     let original = "<p>Start</p>"
     let store = RichTextEditorSheetDraftStore(htmlContent: original)
@@ -132,6 +173,79 @@ import WebKit
 import XCTest
 
 final class RichTextEditorReadinessTests: XCTestCase {
+
+    @MainActor
+    func testHostedEditorLoadsCanonicalEquivalentButByteDistinctNativeBaseline() async throws {
+        let ready = expectation(description: "Composed baseline loaded")
+        let composed = "<p>\u{304C}</p>"
+        let decomposed = "<p>\u{304B}\u{3099}</p>"
+        var content = composed
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { content }, set: { content = $0 }),
+            documentID: "same-document", editorContext: context,
+            onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        let oldGeneration = coordinator.contentGeneration
+
+        content = decomposed
+        coordinator.replaceContentIfNeeded(content, force: false)
+
+        XCTAssertNotEqual(coordinator.contentGeneration, oldGeneration)
+        let loadResult = try await webView.evaluateJavaScript("window.getContent()")
+        let loaded = try XCTUnwrap(loadResult as? String)
+        XCTAssertTrue(loaded.utf8.elementsEqual(decomposed.utf8))
+        XCTAssertTrue(content.utf8.elementsEqual(decomposed.utf8))
+        let canUndo = try await webView.evaluateJavaScript("window.undo()") as? Bool
+        XCTAssertEqual(canUndo, false)
+    }
+
+    @MainActor
+    func testQueuedEditCannotOverwriteByteDistinctNativeChangeBeforeViewUpdate() async throws {
+        let ready = expectation(description: "Composed baseline loaded")
+        let held = expectation(description: "Old edit intercepted")
+        let composed = "<p>\u{304C}</p>"
+        let decomposed = "<p>\u{304B}\u{3099}</p>"
+        var content = composed
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { content }, set: { content = $0 }),
+            documentID: "same-document", editorContext: context,
+            onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        let controller = webView.configuration.userContentController
+        let oldGeneration = coordinator.contentGeneration
+        var heldMessage: WKScriptMessage?
+        let relay = EditorMessageRelay { _, message in
+            if heldMessage == nil {
+                heldMessage = message
+                held.fulfill()
+            }
+        }
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(relay, name: "contentChanged")
+        defer { controller.removeScriptMessageHandler(forName: "contentChanged") }
+        context.replaceContent(with: "<p>Queued old edit</p>")
+        await fulfillment(of: [held], timeout: 5)
+
+        content = decomposed
+        coordinator.userContentController(controller, didReceive: try XCTUnwrap(heldMessage))
+
+        XCTAssertTrue(content.utf8.elementsEqual(decomposed.utf8))
+        XCTAssertNotEqual(coordinator.contentGeneration, oldGeneration)
+        let loadResult = try await webView.evaluateJavaScript("window.getContent()")
+        let loaded = try XCTUnwrap(loadResult as? String)
+        XCTAssertTrue(loaded.utf8.elementsEqual(decomposed.utf8))
+    }
+
     @MainActor
     func testHostedEditorLoadsBaselineWithoutUpdatesOrUndoAndSeparatesReplacementEdits() async throws {
         let ready = expectation(description: "Baseline loaded")

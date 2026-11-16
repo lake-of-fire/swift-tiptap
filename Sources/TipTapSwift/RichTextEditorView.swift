@@ -138,6 +138,12 @@ public struct RichTextEditorView {
 
     // MARK: - Helpers
 
+    /// Source ownership compares encoded bytes, not Swift's canonical Unicode equality.
+    /// Canonically equivalent text can have different UTF-16 offsets and digests.
+    static func hasIdenticalHTMLBytes(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.utf8.elementsEqual(rhs.utf8)
+    }
+
     static func escapeForJS(_ string: String) -> String {
         string
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -228,7 +234,7 @@ public struct RichTextEditorView {
                     // A binding can change before SwiftUI delivers its next
                     // representable update. Adopt that native target first,
                     // instead of overwriting it with an already queued edit.
-                    guard parent.htmlContent == (pendingContent ?? lastContentFromJS) else {
+                    guard RichTextEditorView.hasIdenticalHTMLBytes(parent.htmlContent, pendingContent ?? lastContentFromJS) else {
                         replaceContentIfNeeded(parent.htmlContent, force: false)
                         return
                     }
@@ -256,7 +262,7 @@ public struct RichTextEditorView {
             // Compare with the pending native target too: A → B → A must retire
             // B even when A still equals the last delivered JavaScript value.
             guard let webView, let pageGeneration = editorPageGeneration,
-                  force || content != (pendingContent ?? lastContentFromJS) else { return }
+                  force || !RichTextEditorView.hasIdenticalHTMLBytes(content, pendingContent ?? lastContentFromJS) else { return }
             let generation = beginContentReplacement(content, in: webView)
             let escaped = RichTextEditorView.escapeForJS(content)
             let escapedPage = RichTextEditorView.escapeForJS(pageGeneration)
@@ -276,13 +282,13 @@ public struct RichTextEditorView {
                     self.pendingContent = nil
                     return
                 }
-                guard self.parent.htmlContent == content else {
+                guard RichTextEditorView.hasIdenticalHTMLBytes(self.parent.htmlContent, content) else {
                     self.replaceContentIfNeeded(self.parent.htmlContent, force: false)
                     return
                 }
                 self.pendingContent = nil
                 self.lastContentFromJS = html
-                if self.parent.htmlContent != html { self.parent.htmlContent = html }
+                if !RichTextEditorView.hasIdenticalHTMLBytes(self.parent.htmlContent, html) { self.parent.htmlContent = html }
             }
         }
 
@@ -334,7 +340,7 @@ public struct RichTextEditorView {
                 // newer value with the normalization of the previous content.
                 guard self.parent.documentID == documentID,
                       self.parent.editorContext === editorContext,
-                      self.parent.htmlContent == content else {
+                      RichTextEditorView.hasIdenticalHTMLBytes(self.parent.htmlContent, content) else {
                     self.initializeEditor(pageGeneration: pageGeneration)
                     return
                 }
