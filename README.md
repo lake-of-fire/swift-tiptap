@@ -111,6 +111,87 @@ runs again after recovery. Input stays disabled and context commands are ignored
 until that baseline is installed. JavaScript undo history, selection, and edits not yet delivered to the
 native binding cannot survive a terminated web process.
 
+### Local-writing host and acknowledged transactions
+
+For an app-owned writing workspace, opt into the public host:
+
+```swift
+RichTextEditorHost(
+    htmlContent: stableDocumentBinding,
+    documentID: documentID,
+    editorContext: context,
+    profile: .localWriting,
+    onEditorReady: activateCurrentDocument
+)
+```
+
+**This profile stays read-only until its actual document has been admitted.**
+`onEditorReady` means the page and normalized HTML binding are ready; it does not
+enable local-writing input. Every baseline load disables input again. The
+standard `RichTextEditorView` and `.standard` host retain their existing input,
+formatting and Reader behavior.
+
+The local profile uses a fresh nonpersistent WebKit store, a restricted bundled
+page, full whitespace preservation, no images/autolinks, and no execution of the
+legacy formatting-accessory installer. It is not a lossless arbitrary-HTML import
+path: keep unsupported source separately before parsing it into this editor.
+
+Use the versioned JSON endpoint for coherent snapshots and acknowledged edits:
+
+```swift
+let responseData = try await context.localWritingRequest(requestData)
+// Decode and validate the actual response before adopting it or enabling input.
+```
+
+The method accepts/returns bounded UTF-8 JSON `Data` (maximum 256 KiB per message).
+It uses `WKWebView.callAsyncJavaScript` arguments, so document text is never
+interpolated into JavaScript source. It captures the current native content
+generation, checks it inside the executing page, and checks it again before
+returning. Replaced/unbound contexts and replies crossing a new baseline fail,
+even when the replacement HTML is identical.
+
+The v1 activation request contains `version: 1`, `operation: "activate"`, a fresh
+command `namespace` UUID, `expectedHTML` matching the normalized current binding,
+and `owner`. The owner has UUID fields `contentContextID`, `documentID`, `editorID`
+and `pageID`, plus nonnegative safe-integer `admissionGeneration` and
+`baselineGeneration`. Optional `initialSelection` has canonical UTF-16
+`lowerBound`/`upperBound`; it is applied to the real editor without focusing it.
+The returned `status: "snapshot"` contains the actual HTML, canonical plain text,
+selection, composition and independent document/selection/input clocks. Validate
+that source and establish the domain baseline before sending
+`operation: "setInputEnabled", enabled: true` with the same owner/namespace.
+
+`context.$localWritingSnapshotJSON` publishes subsequent versioned coherent
+messages. The initial event may arrive before the activation call returns; do
+not treat it as an already-admitted document. Snapshot events are transient and
+contain text. The application owns durable checkpoints and must not log or cache
+them in unrelated stores. A transaction acknowledgment is not a disk-save receipt.
+
+The `replace` operation includes a namespace/ordinal command ID, the complete
+expected source clock, schema/projection versions, a canonical UTF-16 range, its
+exact `expectedText`, and literal `replacement`. The receiver synchronously checks
+those guards and settled composition, then applies one undoable PM transaction.
+Identical replacements preserve selection and redo. Exact retries return the
+original receipt; evicted old ordinals remain consumed. A `revoke` request
+prevents a not-yet-applied ordinal from applying later, or returns its existing
+outcome. Cancelling a Swift task alone does not prove cancellation of a WebKit edit.
+
+Canonical v1 text preserves Unicode and whitespace, uses one LF per actual
+text-block boundary/hard break, omits visual list markers and ruby readings,
+and retains empty/trailing blocks. Editing a simple ruby base invalidates that
+whole annotation in the same undo event. Unsupported nodes and unmappable
+selections are refused; a selected reading is never silently treated as a base
+caret. The exact wire fields and bounded receipt policy live in
+[`WebEditor/src/local-writing-bridge.js`](WebEditor/src/local-writing-bridge.js).
+
+Use `setInputEnabled` with `enabled: false` to preserve a read-only draft for recovery. The
+`retire` operation instead disables/blurs input, clears live text and undo/redo,
+drops pending payloads, and refuses the old owner. Storage deletion is still an
+application responsibility. WebKit reload requires a fresh owner/namespace and
+another actual-baseline admission. Native IME/focus, context replacement and
+late-reply regressions require the real Apple test host; portable bundle tests
+do not establish those native behaviors.
+
 ### Editor Sheet
 
 ```swift

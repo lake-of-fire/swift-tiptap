@@ -175,6 +175,7 @@ public struct RichTextEditorView {
         controller.add(coordinator, name: "contentChanged")
         controller.add(coordinator, name: "editorReady")
         controller.add(coordinator, name: "editorHeightChanged")
+        controller.add(coordinator, name: "localWritingSnapshot")
         coordinator.installBridge(in: controller)
         configuration.userContentController = controller
         return configuration
@@ -292,6 +293,18 @@ public struct RichTextEditorView {
                       payload["bridgeGeneration"] as? String == bridgeGeneration,
                       let pageGeneration = payload["pageGeneration"] as? String else { return }
                 initializeEditor(pageGeneration: pageGeneration)
+
+            case "localWritingSnapshot":
+                guard parent.profile == .localWriting, isEditorReady,
+                      let payload = message.body as? [String: Any],
+                      payload["bridgeGeneration"] as? String == bridgeGeneration,
+                      payload["contentGeneration"] as? String == contentGeneration,
+                      let json = payload["json"] as? String else { return }
+                guard RichTextEditorView.hasIdenticalHTMLBytes(parent.htmlContent, pendingContent ?? lastContentFromJS) else {
+                    replaceContentIfNeeded(parent.htmlContent, force: false)
+                    return
+                }
+                parent.editorContext?.receiveLocalWritingSnapshot(json, from: webView)
 
             case "editorHeightChanged":
                 break
@@ -514,6 +527,7 @@ extension RichTextEditorView: UIViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentChanged")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorReady")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorHeightChanged")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "localWritingSnapshot")
         coordinator.parent.editorContext?.unbind(from: webView)
         coordinator.webView = nil
         coordinator.accessoryView = nil
@@ -537,6 +551,7 @@ extension RichTextEditorView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentChanged")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorReady")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "editorHeightChanged")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "localWritingSnapshot")
         coordinator.parent.editorContext?.unbind(from: webView)
         coordinator.webView = nil
     }

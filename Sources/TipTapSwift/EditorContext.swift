@@ -23,6 +23,9 @@ public final class EditorContext: ObservableObject {
     private var contentGeneration: String?
 
     func bind(to webView: WKWebView, contentGeneration: String?) {
+        if (self.webView !== webView || self.contentGeneration != contentGeneration), localWritingSnapshotJSON != nil {
+            localWritingSnapshotJSON = nil
+        }
         self.webView = webView
         self.contentGeneration = contentGeneration
     }
@@ -31,6 +34,58 @@ public final class EditorContext: ObservableObject {
         guard self.webView === webView else { return }
         self.webView = nil
         contentGeneration = nil
+        if localWritingSnapshotJSON != nil { localWritingSnapshotJSON = nil }
+    }
+
+    /// Versioned coherent editor messages from the opt-in local-writing profile.
+    /// This is transient transport, not an HTML binding or persistence receipt.
+    @Published public private(set) var localWritingSnapshotJSON: String?
+
+    func receiveLocalWritingSnapshot(_ json: String, from webView: WKWebView) {
+        guard self.webView === webView, contentGeneration != nil,
+              json.utf8.count <= 262_144 else { return }
+        localWritingSnapshotJSON = json
+    }
+
+    /// Sends a versioned local-writing bridge request without interpolating user
+    /// text into JavaScript. A replaced native binding retires an in-flight reply.
+    /// Flow's typed codec validates the response and its source-bound coordinator
+    /// validates transaction acknowledgments before adopting them.
+    public func localWritingRequest(_ request: Data) async throws -> Data {
+        guard request.count <= 262_144, let json = String(data: request, encoding: .utf8) else {
+            throw NSError(domain: "TipTapSwift.LocalWriting", code: 1)
+        }
+        guard let webView, let generation = contentGeneration else {
+            throw NSError(domain: "TipTapSwift.LocalWriting", code: 2)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            webView.callAsyncJavaScript(
+                """
+                if (!window.isEditorContentGeneration?.(generation) || !window.localWritingRequest) return null
+                return JSON.stringify(window.localWritingRequest(JSON.parse(requestJSON)))
+                """,
+                arguments: ["generation": generation, "requestJSON": json],
+                in: nil,
+                contentWorld: .page
+            ) { [weak self, weak webView] result in
+                MainActor.assumeIsolated {
+                    guard let self, let webView, self.webView === webView,
+                          self.contentGeneration == generation else {
+                        continuation.resume(throwing: NSError(domain: "TipTapSwift.LocalWriting", code: 2))
+                        return
+                    }
+                    switch result {
+                    case .failure(let error): continuation.resume(throwing: error)
+                    case .success(let value):
+                        guard let json = value as? String, let data = json.data(using: .utf8), data.count <= 262_144 else {
+                            continuation.resume(throwing: NSError(domain: "TipTapSwift.LocalWriting", code: 3))
+                            return
+                        }
+                        continuation.resume(returning: data)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Alert State (observed by RichTextEditorSheet)

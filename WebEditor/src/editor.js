@@ -7,6 +7,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import Underline from '@tiptap/extension-underline';
 import { EditorState } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
+import { createLocalWritingBridge } from './local-writing-bridge.js'
 
 // Keep ruby markup editable and serializable, including its reading and fallback text.
 const Ruby = Node.create({
@@ -35,6 +36,13 @@ const parseOptions = localWriting ? { preserveWhitespace: 'full' } : {}
 // the page it came from before it is allowed to mutate a replacement page.
 const pageGeneration = Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join('-')
 let contentGeneration = null;
+const localBridge = localWriting ? createLocalWritingBridge(() => editor, value => {
+  window.webkit.messageHandlers.localWritingSnapshot?.postMessage({
+    bridgeGeneration, contentGeneration, json: JSON.stringify(value)
+  })
+}) : null
+window.localWritingRequest = value => localBridge
+  ? localBridge.request(value) : { version: 1, status: 'unavailable', reason: 'editorUnavailable' }
 window.initEditor = function(content, placeholder) {
   editor = new Editor({
     element: document.querySelector('#editor'),
@@ -60,12 +68,14 @@ window.initEditor = function(content, placeholder) {
       Underline,
     ],
     content: content || '',
+    onTransaction: () => { localBridge?.transaction() },
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       window.webkit.messageHandlers.contentChanged.postMessage({ bridgeGeneration, contentGeneration, html });
     },
     onCreate: () => { window.requestEditorReady() },
   });
+  localBridge?.attach(editor)
 };
 window.requestEditorReady = function() {
   if (!editor) return
@@ -74,6 +84,8 @@ window.requestEditorReady = function() {
 window.isEditorPageGeneration = function(generation) { return !!editor && generation === pageGeneration }
 window.loadContent = function(html, generation) {
   if (!editor) return
+  localBridge?.reset()
+  if (localWriting) editor.setEditable(false, false)
   contentGeneration = generation
   // Loading establishes a baseline, not an edit. Let TipTap normalize the
   // document, then reset plugin state as well as selection and stored marks.
@@ -103,7 +115,11 @@ window.undo = function() { return editor ? editor.commands.undo() : false }
 window.redo = function() { return editor ? editor.commands.redo() : false }
 window.isEditorContentGeneration = function(generation) { return generation === contentGeneration; };
 window.getContent = function() { return editor ? editor.getHTML() : ''; };
-window.setEditable = function(value) { if (editor) editor.setEditable(value, false) }
+window.setEditable = function(value) {
+  // Local-writing input is enabled only by the acknowledged bridge after its
+  // actual baseline is admitted. Generic wrapper readiness must not bypass it.
+  if (editor && (!localWriting || value === false)) editor.setEditable(value, false)
+}
 window.focus = function() { if (editor) editor.commands.focus(); };
 window.isActive = function(name, attrs) { return editor ? editor.isActive(name, attrs) : false; };
 window.setTheme = function(theme) { document.documentElement.setAttribute('data-theme', theme); };

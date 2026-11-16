@@ -14,6 +14,124 @@ import AppKit
 /// tests, emulate WebKit, or establish App Store suitability.
 final class EditorHostTests: XCTestCase {
     @MainActor
+    func testDelayedAcknowledgmentCannotCrossSameHTMLBaselineReplacement() async throws {
+        let ready = expectation(description: "Local page ready for delayed reply")
+        var html = "<p>同じ</p>"
+        let binding = Binding(get: { html }, set: { html = $0 })
+        let context = EditorContext()
+        let mounted = MountedHost(RichTextEditorHost(
+            htmlContent: binding, documentID: "stable", editorContext: context,
+            profile: .localWriting, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        let owner: [String: Any] = [
+            "contentContextID": UUID().uuidString, "documentID": UUID().uuidString,
+            "editorID": UUID().uuidString, "pageID": UUID().uuidString,
+            "admissionGeneration": 0, "baselineGeneration": 0
+        ]
+        let namespace = UUID().uuidString
+        let request = try JSONSerialization.data(withJSONObject: [
+            "version": 1, "operation": "activate", "owner": owner, "namespace": namespace, "expectedHTML": html
+        ])
+        // Delay only the public native call's return value. The real receiver
+        // has executed; its WebKit promise reply remains pending across a real
+        // native baseline replacement with identical HTML.
+        _ = try await webView.evaluateJavaScript("""
+            (() => {
+                const stringify = JSON.stringify
+                const request = window.localWritingRequest
+                window.localWritingRequest = value => ({ delayedBridgeReply: true, actual: request(value) })
+                JSON.stringify = function(value, ...rest) {
+                    if (!value?.delayedBridgeReply) return stringify.call(JSON, value, ...rest)
+                    return new Promise(resolve => {
+                        window.releaseDelayedBridgeReply = () => {
+                            JSON.stringify = stringify
+                            window.localWritingRequest = request
+                            resolve(stringify(value.actual))
+                        }
+                    })
+                }
+            })()
+            """)
+        let pending = Task { try await context.localWritingRequest(request) }
+        let deadline = Date().addingTimeInterval(5)
+        var waiting = false
+        while !waiting, Date() < deadline {
+            waiting = try await webView.evaluateJavaScript("typeof window.releaseDelayedBridgeReply === 'function'") as? Bool == true
+            if !waiting { try await Task.sleep(nanoseconds: 10_000_000) }
+        }
+        XCTAssertTrue(waiting)
+        coordinator.replaceContentIfNeeded(html, force: true)
+        _ = try await webView.evaluateJavaScript("window.releaseDelayedBridgeReply?.()")
+        do {
+            _ = try await pending.value
+            XCTFail("Old native reply crossed the replacement content generation")
+        } catch {}
+        let snapshotRequest = try JSONSerialization.data(withJSONObject: [
+            "version": 1, "operation": "snapshot", "owner": owner, "namespace": namespace
+        ])
+        let response = try await context.localWritingRequest(snapshotRequest)
+        let value = try XCTUnwrap(JSONSerialization.jsonObject(with: response) as? [String: Any])
+        XCTAssertEqual(value["status"] as? String, "unavailable")
+        XCTAssertEqual(value["reason"] as? String, "editorUnavailable")
+        let actual = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(actual, html)
+    }
+
+    @MainActor
+    func testAcknowledgedLocalBridgeUsesArgumentsAndRetiresSameHTMLContext() async throws {
+        let ready = expectation(description: "Acknowledged local page ready")
+        var html = "<p>か\u{3099}𠮷 ' \\</p>"
+        let binding = Binding(get: { html }, set: { html = $0 })
+        let context = EditorContext()
+        let mounted = MountedHost(RichTextEditorHost(
+            htmlContent: binding, documentID: "A", editorContext: context,
+            profile: .localWriting, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let owner: [String: Any] = [
+            "contentContextID": UUID().uuidString, "documentID": UUID().uuidString,
+            "editorID": UUID().uuidString, "pageID": UUID().uuidString,
+            "admissionGeneration": 0, "baselineGeneration": 0
+        ]
+        let namespace = UUID().uuidString
+        let request = try JSONSerialization.data(withJSONObject: [
+            "version": 1, "operation": "activate", "owner": owner, "namespace": namespace,
+            "expectedHTML": html, "initialSelection": ["lowerBound": 0, "upperBound": 2]
+        ])
+        let data = try await context.localWritingRequest(request)
+        let reply = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(reply["status"] as? String, "snapshot")
+        let snapshot = try XCTUnwrap(reply["snapshot"] as? [String: Any])
+        let document = try XCTUnwrap(snapshot["document"] as? [String: Any])
+        XCTAssertEqual(document["plainText"] as? String, "か\u{3099}𠮷 ' \\")
+        let editable = try await webView.evaluateJavaScript("document.querySelector('.tiptap').contentEditable") as? String
+        XCTAssertEqual(editable, "false")
+
+        // A replacement owner can display identical HTML. The old context must
+        // lose the native capability even though string equality cannot tell.
+        let replacement = EditorContext()
+        mounted.replace(RichTextEditorHost(htmlContent: binding, documentID: "B",
+            editorContext: replacement, profile: .localWriting))
+        let deadline = Date().addingTimeInterval(5)
+        while replacement.webView !== webView, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertTrue(replacement.webView === webView)
+        XCTAssertNil(context.webView)
+        XCTAssertNil(context.localWritingSnapshotJSON)
+        do {
+            _ = try await context.localWritingRequest(request)
+            XCTFail("Retired context accepted a local bridge request")
+        } catch {}
+        let currentHTML = try await webView.evaluateJavaScript("window.getContent()") as? String
+        XCTAssertEqual(currentHTML, html)
+    }
+
+    @MainActor
     func testLocalWritingUsesEphemeralStorageAndNeverInstallsAccessoryOnContextChange() async throws {
         let ready = expectation(description: "Local page initialized under CSP")
         var html = "<p>A  B\tC\nD</p>"
