@@ -181,7 +181,12 @@ text-block boundary/hard break, omits visual list markers and ruby readings,
 and retains empty/trailing blocks. Editing a simple ruby base invalidates that
 whole annotation in the same undo event. Unsupported nodes and unmappable
 selections are refused; a selected reading is never silently treated as a base
-caret. The exact wire fields and bounded receipt policy live in
+caret. Literal CR (including CRLF) and NUL are outside v1's supported content:
+HTML parsing would normalize or drop them on reopen. Replacements containing
+them are refused before mutation, and snapshots containing them are unavailable
+for checkpointing. Original source remains available for recovery; the bridge
+does not silently normalize it. LF and tab round-trip unchanged. The exact wire
+fields and bounded receipt policy live in
 [`WebEditor/src/local-writing-bridge.js`](WebEditor/src/local-writing-bridge.js).
 
 Use `setInputEnabled` with `enabled: false` to preserve a read-only draft for recovery. The

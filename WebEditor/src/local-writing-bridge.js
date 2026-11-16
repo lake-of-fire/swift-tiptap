@@ -144,6 +144,11 @@ function validString(value) {
   return true
 }
 
+// HTML tokenization normalizes literal CR/CRLF and drops NUL on reload. The
+// v1 snapshot format must never acknowledge text it cannot reopen exactly.
+// Preserve unsupported source outside this editor; do not silently normalize it.
+const reloadableText = value => !value.includes('\r') && !value.includes('\u0000')
+
 function graphemeBoundary(text, offset) {
   if (!counter(offset) || offset > text.length || !segmenter) return false
   if (offset === text.length) return true
@@ -202,6 +207,7 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     }
     const document = { html: editor.getHTML(), plainText: projection.text, schemaVersion: 1, projectionVersion: 1 }
     if (!validString(document.html) || !validString(document.plainText)) throw new Error('invalidText')
+    if (!reloadableText(document.html) || !reloadableText(document.plainText)) throw new Error('unsupportedProjection')
     const previous = state.snapshot
     const clock = previous ? { ...previous.clock } : { document: 0, selection: 0, input: 0 }
     if (previous) {
@@ -319,6 +325,7 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
         !counter(value.range.lowerBound) || !counter(value.range.upperBound) || value.range.upperBound < value.range.lowerBound ||
         !validString(value.expectedText) || !validString(value.replacement)) return reject(value, 'invalidRange', requestJSON)
     if (value.schemaVersion !== 1 || value.projectionVersion !== 1) return reject(value, 'unsupportedProjection', requestJSON)
+    if (!reloadableText(value.replacement)) return reject(value, 'unsupportedProjection', requestJSON)
     let before
     try { before = capture() } catch { return reject(value, 'unsupportedProjection', requestJSON) }
     if (composition.kind !== 'settled' || editor.view.composing) return reject(value, 'compositionUnsettled', requestJSON)
