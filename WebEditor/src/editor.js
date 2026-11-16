@@ -27,6 +27,10 @@ const RubyParenthesis = Node.create({
 
 let editor = null;
 const bridgeGeneration = window.__tipTapBridgeGeneration;
+// Native chooses this before creating the page. Legacy hosts keep their existing
+// rich-document behavior when no profile was supplied.
+const localWriting = window.__tipTapContentProfile === 'localWriting'
+const parseOptions = localWriting ? { preserveWhitespace: 'full' } : {}
 // A WKWebView can host multiple page lifetimes. Queued native work must name
 // the page it came from before it is allowed to mutate a replacement page.
 const pageGeneration = Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join('-')
@@ -37,18 +41,21 @@ window.initEditor = function(content, placeholder) {
     // Native initialization installs the authoritative binding before enabling
     // input, so typing cannot be discarded while the first baseline is loading.
     editable: false,
+    parseOptions,
     extensions: [
-      StarterKit, Ruby, RubyText, RubyParenthesis,
+      // These marks are configured explicitly below. Registering a second copy
+      // through StarterKit would leave the local profile's link policy ambiguous.
+      StarterKit.configure({ link: false, underline: false }), Ruby, RubyText, RubyParenthesis,
       Link.configure({
         openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
+        autolink: !localWriting,
+        linkOnPaste: !localWriting,
         defaultProtocol: 'https',
         protocols: [{ scheme: 'mailto', optionalSlashes: true }, { scheme: 'tel', optionalSlashes: true }],
         HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
       }),
       Placeholder.configure({ placeholder: placeholder || 'Start typing...' }),
-      Image.configure({ inline: false, allowBase64: true }),
+      ...(!localWriting ? [Image.configure({ inline: false, allowBase64: true })] : []),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Underline,
     ],
@@ -71,7 +78,7 @@ window.loadContent = function(html, generation) {
   // Loading establishes a baseline, not an edit. Let TipTap normalize the
   // document, then reset plugin state as well as selection and stored marks.
   // Merely setting addToHistory:false leaves undo/redo from the previous doc.
-  editor.commands.setContent(html, { emitUpdate: false })
+  editor.commands.setContent(html, { emitUpdate: false, parseOptions })
   editor.view.updateState(EditorState.create({
     schema: editor.state.schema,
     doc: editor.state.doc,
@@ -80,7 +87,7 @@ window.loadContent = function(html, generation) {
 }
 window.setContent = function(html) {
   if (!editor) return
-  const document = createDocument(html, editor.schema, {}, {
+  const document = createDocument(html, editor.schema, parseOptions, {
     errorOnInvalidContent: editor.options.enableContentCheck,
   })
   // An equivalent replacement must not consume an undo step or discard redo.
@@ -111,6 +118,9 @@ window.toggleBlockquote = function() { if (editor) editor.chain().focus().toggle
 window.toggleCodeBlock = function() { if (editor) editor.chain().focus().toggleCodeBlock().run(); };
 window.setHorizontalRule = function() { if (editor) editor.chain().focus().setHorizontalRule().run(); };
 window.setLink = function(href) { if (editor) (href === null ? editor.chain().focus().unsetLink().run() : editor.chain().focus().extendMarkRange('link').setLink({ href }).run()); };
-window.setImage = function(src, alt) { if (editor) editor.chain().focus().setImage({ src, alt: alt || '' }).run(); };
+window.setImage = function(src, alt) {
+  if (!editor || localWriting) return false
+  return editor.chain().focus().setImage({ src, alt: alt || '' }).run()
+}
 window.setTextAlign = function(align) { if (editor) editor.chain().focus().setTextAlign(align).run(); };
 window.unsetTextAlign = function() { if (editor) editor.chain().focus().unsetTextAlign().run(); };

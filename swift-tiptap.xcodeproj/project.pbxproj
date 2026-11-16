@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AC7DC949727E66690546D5E2 /* EditorResourcePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 963072832AF1631836278F68 /* EditorResourcePolicy.swift */; };
+		18CA31BDD9EA5CB89C75B0D6 /* RichTextEditorHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3381AA28AD8C15A1C453F6 /* RichTextEditorHost.swift */; };
+		8B2851C050A70A208A9BEA18 /* RichTextEditorProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BC07E967C1450953722E840 /* RichTextEditorProfile.swift */; };
+		5E9F51BF1EB7CA4C63EBE3F1 /* EditorHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4E9E5BA9454BAF7FEA437D /* EditorHostTests.swift */; };
+		4D4B232FF1938EFC6A98DFB7 /* EditorResourcePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE50AE782AC8E2A0744C60B6 /* EditorResourcePolicyTests.swift */; };
 		11441A4208D4E7EA82DFED2C /* HTMLContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD11F587A082B0BD2B645D8 /* HTMLContentView.swift */; };
 		1352A67857DCA022BDB88618 /* TuistBundle+TipTapSwift.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFB7BBD1AA2D5A4F4BEE62C /* TuistBundle+TipTapSwift.swift */; };
 		144C6114A751A7E406A589D2 /* RichTextEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556B519A79900EBF964E5105 /* RichTextEditorView.swift */; };
@@ -84,6 +89,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		963072832AF1631836278F68 /* EditorResourcePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorResourcePolicy.swift; sourceTree = "<group>"; };
+		DD3381AA28AD8C15A1C453F6 /* RichTextEditorHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditorHost.swift; sourceTree = "<group>"; };
+		2BC07E967C1450953722E840 /* RichTextEditorProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditorProfile.swift; sourceTree = "<group>"; };
+		9D4E9E5BA9454BAF7FEA437D /* EditorHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorHostTests.swift; sourceTree = "<group>"; };
+		EE50AE782AC8E2A0744C60B6 /* EditorResourcePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorResourcePolicyTests.swift; sourceTree = "<group>"; };
 		0E2C4CB7EA26E69EF43DF30C /* HTMLPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLPreviewView.swift; sourceTree = "<group>"; };
 		1F77708C3325027309657183 /* FormattingAccessoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingAccessoryView.swift; sourceTree = "<group>"; };
 		24814880F45E890078D4F095 /* TipTapSwiftTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TipTapSwiftTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -158,6 +168,9 @@
 		5B91A8ACCBBB4CDF99777D45 /* TipTapSwift */ = {
 			isa = PBXGroup;
 			children = (
+				963072832AF1631836278F68 /* EditorResourcePolicy.swift */,
+				DD3381AA28AD8C15A1C453F6 /* RichTextEditorHost.swift */,
+				2BC07E967C1450953722E840 /* RichTextEditorProfile.swift */,
 				C337053B5CBD73C09A095DED /* Resources */,
 				9F19E06E163B88EB0B0FF1DB /* EditorContext.swift */,
 				1F77708C3325027309657183 /* FormattingAccessoryView.swift */,
@@ -173,6 +186,8 @@
 		80235FE4053F64BE70B3380F /* TipTapSwiftTests */ = {
 			isa = PBXGroup;
 			children = (
+				9D4E9E5BA9454BAF7FEA437D /* EditorHostTests.swift */,
+				EE50AE782AC8E2A0744C60B6 /* EditorResourcePolicyTests.swift */,
 				C305CC2DFCA92F57A427C428 /* RichTextEditorSheetDraftTests.swift */,
 				60BC82CC5FE6586BB77576F5 /* StringHTMLTests.swift */,
 			);
@@ -367,6 +382,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5E9F51BF1EB7CA4C63EBE3F1 /* EditorHostTests.swift in Sources */,
+				4D4B232FF1938EFC6A98DFB7 /* EditorResourcePolicyTests.swift in Sources */,
 				83D7975C19E54EB726E9A4AA /* RichTextEditorSheetDraftTests.swift in Sources */,
 				EF5DB8BBAA1BF4B1868D5386 /* StringHTMLTests.swift in Sources */,
 			);
@@ -376,6 +393,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AC7DC949727E66690546D5E2 /* EditorResourcePolicy.swift in Sources */,
+				18CA31BDD9EA5CB89C75B0D6 /* RichTextEditorHost.swift in Sources */,
+				8B2851C050A70A208A9BEA18 /* RichTextEditorProfile.swift in Sources */,
 				1352A67857DCA022BDB88618 /* TuistBundle+TipTapSwift.swift in Sources */,
 				DCEB830D6E9D15BEC445C151 /* EditorContext.swift in Sources */,
 				F91DFBFE8FA91199EA1CA989 /* FormattingAccessoryView.swift in Sources */,

@@ -34,6 +34,7 @@ public struct RichTextEditorView {
     var placeholder: String?
     var editorContext: EditorContext?
     var onEditorReady: (() -> Void)?
+    let profile: RichTextEditorProfile
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -62,6 +63,26 @@ public struct RichTextEditorView {
         self.placeholder = placeholder
         self.editorContext = editorContext
         self.onEditorReady = onEditorReady
+        self.profile = .standard
+    }
+
+    // Only the public host exposes profile selection. It keys representable
+    // identity to the profile, because website storage cannot be changed after
+    // WKWebView initialization.
+    init(
+        htmlContent: Binding<String>,
+        documentID: AnyHashable?,
+        placeholder: String?,
+        editorContext: EditorContext?,
+        profile: RichTextEditorProfile,
+        onEditorReady: (() -> Void)?
+    ) {
+        self._htmlContent = htmlContent
+        self.documentID = documentID
+        self.placeholder = placeholder
+        self.editorContext = editorContext
+        self.onEditorReady = onEditorReady
+        self.profile = profile
     }
 
     @MainActor
@@ -87,7 +108,7 @@ public struct RichTextEditorView {
         #if canImport(UIKit)
         editorContext?.bind(to: webView, contentGeneration: nil)
 
-        if let editorContext {
+        if profile.usesFormattingAccessory, let editorContext {
             let accessoryView = FormattingAccessoryView(context: editorContext)
             coordinator.accessoryView = accessoryView
             Self.installInputAccessoryView(coordinator, on: webView)
@@ -96,15 +117,19 @@ public struct RichTextEditorView {
         editorContext?.bind(to: webView, contentGeneration: nil)
         #endif
 
-        Self.loadEditor(in: webView)
+        Self.loadEditor(in: webView, profile: profile)
     }
 
-    private static func loadEditor(in webView: WKWebView) {
-        if let resourceURL = Bundle.module.url(
-            forResource: "tiptap-editor",
+    private static func editorResourceURL(for profile: RichTextEditorProfile) -> URL? {
+        Bundle.module.url(
+            forResource: profile.editorResourceName,
             withExtension: "html",
             subdirectory: "RichTextEditor"
-        ) {
+        )
+    }
+
+    private static func loadEditor(in webView: WKWebView, profile: RichTextEditorProfile) {
+        if let resourceURL = editorResourceURL(for: profile) {
             let directory = resourceURL.deletingLastPathComponent()
             webView.loadFileURL(resourceURL, allowingReadAccessTo: directory)
         }
@@ -120,8 +145,10 @@ public struct RichTextEditorView {
                 to: webView, contentGeneration: coordinator.isEditorReady ? coordinator.contentGeneration : nil
             )
             #if canImport(UIKit)
-            coordinator.accessoryView = editorContext.map { FormattingAccessoryView(context: $0) }
-            Self.installInputAccessoryView(coordinator, on: webView)
+            if profile.usesFormattingAccessory {
+                coordinator.accessoryView = editorContext.map { FormattingAccessoryView(context: $0) }
+                Self.installInputAccessoryView(coordinator, on: webView)
+            }
             #endif
         }
         coordinator.parent = self
@@ -137,6 +164,21 @@ public struct RichTextEditorView {
     }
 
     // MARK: - Helpers
+
+    private func makeWebViewConfiguration(coordinator: Coordinator) -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        if !profile.usesPersistentWebsiteData {
+            configuration.websiteDataStore = .nonPersistent()
+            configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        }
+        let controller = WKUserContentController()
+        controller.add(coordinator, name: "contentChanged")
+        controller.add(coordinator, name: "editorReady")
+        controller.add(coordinator, name: "editorHeightChanged")
+        coordinator.installBridge(in: controller)
+        configuration.userContentController = controller
+        return configuration
+    }
 
     /// Source ownership compares encoded bytes, not Swift's canonical Unicode equality.
     /// Canonically equivalent text can have different UTF-16 offsets and digests.
@@ -159,6 +201,7 @@ public struct RichTextEditorView {
     /// This is the standard approach used by production rich text editors on iOS.
     @MainActor
     private static func installInputAccessoryView(_ coordinator: Coordinator, on webView: WKWebView) {
+        guard coordinator.parent.profile.usesFormattingAccessory else { return }
         guard let contentView = webView.scrollView.subviews.first(where: {
             let name = NSStringFromClass(type(of: $0))
             return name.hasPrefix("WKContent") || name.hasPrefix("_TipTapContent_")
@@ -363,7 +406,12 @@ public struct RichTextEditorView {
 
         func installBridge(in controller: WKUserContentController) {
             controller.addUserScript(WKUserScript(
-                source: "window.__tipTapBridgeGeneration = '\(bridgeGeneration)';",
+                source: """
+                    window.__tipTapBridgeGeneration = '\(bridgeGeneration)';
+                    Object.defineProperty(window, '__tipTapContentProfile', {
+                        value: '\(parent.profile.rawValue)', writable: false, configurable: false
+                    });
+                    """,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             ))
@@ -418,7 +466,7 @@ public struct RichTextEditorView {
             // Keep the latest native binding; JavaScript history died with the
             // page. Reload the bundled editor even if the first load never committed.
             retireEditorPage(in: webView)
-            RichTextEditorView.loadEditor(in: webView)
+            RichTextEditorView.loadEditor(in: webView, profile: parent.profile)
         }
 
         @MainActor
@@ -427,6 +475,19 @@ public struct RichTextEditorView {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
+            if parent.profile.restrictsNavigationToEditorPage {
+                guard let pageURL = RichTextEditorView.editorResourceURL(for: parent.profile) else {
+                    decisionHandler(.cancel)
+                    return
+                }
+                let policy = EditorResourcePolicy(editorPageURL: pageURL)
+                decisionHandler(policy.allowsNavigation(
+                    to: navigationAction.request.url,
+                    sourceIsMainFrame: navigationAction.sourceFrame.isMainFrame,
+                    targetIsMainFrame: navigationAction.targetFrame?.isMainFrame == true
+                ) ? .allow : .cancel)
+                return
+            }
             if navigationAction.navigationType == .other || navigationAction.request.url?.isFileURL == true {
                 decisionHandler(.allow)
             } else {
@@ -439,16 +500,7 @@ public struct RichTextEditorView {
 #if canImport(UIKit)
 extension RichTextEditorView: UIViewRepresentable {
     public func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let contentController = WKUserContentController()
-
-        contentController.add(context.coordinator, name: "contentChanged")
-        contentController.add(context.coordinator, name: "editorReady")
-        contentController.add(context.coordinator, name: "editorHeightChanged")
-        context.coordinator.installBridge(in: contentController)
-
-        config.userContentController = contentController
-
+        let config = makeWebViewConfiguration(coordinator: context.coordinator)
         let webView = WKWebView(frame: .zero, configuration: config)
         configureWebView(webView, coordinator: context.coordinator)
         return webView
@@ -471,16 +523,7 @@ extension RichTextEditorView: UIViewRepresentable {
 #elseif canImport(AppKit)
 extension RichTextEditorView: NSViewRepresentable {
     public func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let contentController = WKUserContentController()
-
-        contentController.add(context.coordinator, name: "contentChanged")
-        contentController.add(context.coordinator, name: "editorReady")
-        contentController.add(context.coordinator, name: "editorHeightChanged")
-        context.coordinator.installBridge(in: contentController)
-
-        config.userContentController = contentController
-
+        let config = makeWebViewConfiguration(coordinator: context.coordinator)
         let webView = WKWebView(frame: .zero, configuration: config)
         configureWebView(webView, coordinator: context.coordinator)
         return webView
