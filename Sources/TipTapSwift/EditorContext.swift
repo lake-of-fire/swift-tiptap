@@ -66,25 +66,26 @@ public final class EditorContext: ObservableObject {
                 """,
                 arguments: ["generation": generation, "requestJSON": json],
                 in: nil,
-                contentWorld: .page
-            ) { [weak self, weak webView] result in
-                MainActor.assumeIsolated {
-                    guard let self, let webView, self.webView === webView,
-                          self.contentGeneration == generation else {
-                        continuation.resume(throwing: NSError(domain: "TipTapSwift.LocalWriting", code: 2))
-                        return
-                    }
-                    switch result {
-                    case .failure(let error): continuation.resume(throwing: error)
-                    case .success(let value):
-                        guard let json = value as? String, let data = json.data(using: .utf8), data.count <= 262_144 else {
-                            continuation.resume(throwing: NSError(domain: "TipTapSwift.LocalWriting", code: 3))
+                in: .page,
+                completionHandler: { [weak self, weak webView] result in
+                    MainActor.assumeIsolated {
+                        guard let self, let webView, self.webView === webView,
+                              self.contentGeneration == generation else {
+                            continuation.resume(throwing: NSError(domain: "TipTapSwift.LocalWriting", code: 2))
                             return
                         }
-                        continuation.resume(returning: data)
+                        switch result {
+                        case .failure(let error): continuation.resume(throwing: error)
+                        case .success(let value):
+                            guard let json = value as? String, let data = json.data(using: .utf8), data.count <= 262_144 else {
+                                continuation.resume(throwing: NSError(domain: "TipTapSwift.LocalWriting", code: 3))
+                                return
+                            }
+                            continuation.resume(returning: data)
+                        }
                     }
                 }
-            }
+            )
         }
     }
 
