@@ -66,7 +66,7 @@ public final class EditorContext: ObservableObject {
                 """,
                 arguments: ["generation": generation, "requestJSON": json],
                 in: nil,
-                contentWorld: .page
+                in: .page
             ) { [weak self, weak webView] result in
                 MainActor.assumeIsolated {
                     guard let self, let webView, self.webView === webView,
