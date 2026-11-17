@@ -14,6 +14,70 @@ import AppKit
 /// tests, emulate WebKit, or establish App Store suitability.
 final class EditorHostTests: XCTestCase {
     @MainActor
+    func testLateCompositionEndCannotPoisonReplacementBaselineAdmission() async throws {
+        let ready = expectation(description: "Local page ready for composition replacement")
+        var html = "<p>Old</p>"
+        let binding = Binding(get: { html }, set: { html = $0 })
+        let context = EditorContext()
+        let mounted = MountedHost(RichTextEditorHost(
+            htmlContent: binding, documentID: "stable", editorContext: context,
+            profile: .localWriting, onEditorReady: { ready.fulfill() }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        func activationRequest(expectedHTML: String) throws -> Data {
+            try JSONSerialization.data(withJSONObject: [
+                "version": 1, "operation": "activate",
+                "owner": [
+                    "contentContextID": UUID().uuidString, "documentID": UUID().uuidString,
+                    "editorID": UUID().uuidString, "pageID": UUID().uuidString,
+                    "admissionGeneration": 0, "baselineGeneration": 0
+                ],
+                "namespace": UUID().uuidString, "expectedHTML": expectedHTML
+            ])
+        }
+        let initial = try await context.localWritingRequest(activationRequest(expectedHTML: html))
+        let initialReply = try XCTUnwrap(JSONSerialization.jsonObject(with: initial) as? [String: Any])
+        XCTAssertEqual(initialReply["status"] as? String, "snapshot")
+        _ = try await webView.evaluateJavaScript("""
+            document.querySelector('.tiptap').dispatchEvent(new CompositionEvent(
+                'compositionstart', { bubbles: true, data: 'か' }
+            )); true
+            """)
+
+        // Exercise the actual reset in the shipped editor, then deliver the old
+        // input lifetime's trailing DOM event. Synthetic events cover bridge
+        // ownership here; they do not establish real Japanese IME fidelity.
+        html = "<p>New</p>"
+        coordinator.replaceContentIfNeeded(html, force: true)
+        let actual = try await webView.evaluateJavaScript("""
+            document.querySelector('.tiptap').dispatchEvent(new CompositionEvent(
+                'compositionend', { bubbles: true, data: 'か' }
+            )); window.getContent()
+            """) as? String
+        XCTAssertEqual(actual, html)
+        let request = try activationRequest(expectedHTML: html)
+        let deadline = Date().addingTimeInterval(5)
+        var reply: [String: Any] = [:]
+        repeat {
+            let response = try await context.localWritingRequest(request)
+            reply = try XCTUnwrap(JSONSerialization.jsonObject(with: response) as? [String: Any])
+            if reply["status"] as? String == "snapshot" { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        } while Date() < deadline
+        XCTAssertEqual(reply["status"] as? String, "snapshot", "Retired IME must not prevent new admission")
+        let snapshot = try XCTUnwrap(reply["snapshot"] as? [String: Any])
+        let document = try XCTUnwrap(snapshot["document"] as? [String: Any])
+        let composition = try XCTUnwrap(snapshot["composition"] as? [String: Any])
+        XCTAssertEqual(document["plainText"] as? String, "New")
+        XCTAssertEqual(composition["kind"] as? String, "settled")
+        let undo = try await webView.evaluateJavaScript("window.undo()") as? Bool
+        XCTAssertEqual(undo, false)
+    }
+
+    @MainActor
     func testDelayedAcknowledgmentCannotCrossSameHTMLBaselineReplacement() async throws {
         let ready = expectation(description: "Local page ready for delayed reply")
         var html = "<p>同じ</p>"

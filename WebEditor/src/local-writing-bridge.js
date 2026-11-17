@@ -388,11 +388,17 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     },
     attach(editor) {
       editor.view.dom.addEventListener('compositionstart', () => {
+        // DOM composition events can outlive a baseline reset. Only an admitted
+        // owner may start input work; a retired event cannot arm the next owner.
+        if (!state || state.retired) return
         compositionGeneration++
         composition = { kind: 'composing', id: newUUID() }
         notify()
       }, true)
       editor.view.dom.addEventListener('compositionend', () => {
+        // A reset already retired the preceding composition. In particular, do
+        // not enter awaitingSettlement without an owner: its barrier cannot run.
+        if (!state || state.retired || composition.kind !== 'composing') return
         const generation = ++compositionGeneration
         composition = { kind: 'awaitingSettlement', id: composition.id ?? newUUID() }
         notify()
