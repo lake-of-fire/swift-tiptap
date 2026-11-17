@@ -23,6 +23,8 @@ private struct FormattingToolbar: View {
                 HStack(spacing: 4) {
                     // 1. Text emphasis
                     iconButton("bold") { context.toggleBold() }
+                        .accessibilityLabel("Bold")
+                        .accessibilityIdentifier("RichTextEditor.Format.Bold")
                     iconButton("italic") { context.toggleItalic() }
                     iconButton("underline") { context.toggleUnderline() }
 
@@ -66,6 +68,8 @@ private struct FormattingToolbar: View {
                 Image(systemName: "keyboard.chevron.compact.down")
                     .font(.system(size: 16, weight: .medium))
             }
+            .accessibilityLabel("Dismiss keyboard")
+            .accessibilityIdentifier("RichTextEditor.DismissKeyboard")
             .tint(.primary)
             .padding(.trailing, 4)
         }
