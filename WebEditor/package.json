@@ -32,13 +32,15 @@
     "@tiptap/extension-horizontal-rule": "3.20.0"
   },
   "devDependencies": {
-    "esbuild": "0.27.3"
+    "esbuild": "0.27.3",
+    "jsdom": "26.1.0"
   },
   "name": "swift-tiptap-web-editor",
   "version": "0.1.0",
   "scripts": {
     "build": "node build-bundle.mjs",
-    "verify": "node build-bundle.mjs --check"
+    "verify": "node build-bundle.mjs --check",
+    "test": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"

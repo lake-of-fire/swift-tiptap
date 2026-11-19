@@ -180,3 +180,56 @@ html, body {
 .tiptap ::selection {
     background-color: rgba(0, 122, 255, 0.2);
 }
+
+/* Source-bound review decorations are not document nodes or clipboard text. */
+.tiptap .local-writing-annotation {
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: currentColor;
+    text-underline-offset: 0.2em;
+    background-color: rgba(0, 122, 255, 0.10);
+    border-radius: 0.15em;
+}
+
+.tiptap .local-writing-annotation:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.tiptap button.local-writing-annotation {
+    display: inline-block;
+    position: relative;
+    vertical-align: baseline;
+    width: 1.15em;
+    min-width: 24px;
+    min-height: max(1.4em, 24px);
+    margin-inline: 0.15em;
+    border: 1px solid currentColor;
+    border-radius: 0.3em;
+    font: inherit;
+    line-height: 1;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.tiptap button.local-writing-annotation-removed::before {
+    content: '\2212';
+}
+
+.tiptap button.local-writing-annotation-added::before {
+    content: '+';
+}
+
+.tiptap button.local-writing-annotation-changed::before {
+    content: '\2194';
+}
+
+@media (prefers-contrast: more) {
+    .tiptap .local-writing-annotation {
+        text-decoration-style: solid;
+        text-decoration-thickness: 2px;
+    }
+}

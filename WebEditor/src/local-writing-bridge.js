@@ -2,6 +2,7 @@ import { Fragment } from '@tiptap/pm/model'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import { getHTMLFromFragment } from '@tiptap/core'
+import { createLocalWritingAnnotations } from './local-writing-annotations.js'
 
 const VERSION = 1
 const MAX_BYTES = 262144
@@ -163,6 +164,18 @@ function followingGraphemeBoundary(text, offset) {
   return part.index === offset ? offset : part.index + part.segment.length
 }
 
+function validAnnotation(value) {
+  if (!ownKeys(value, ['id', 'range', 'expectedText', 'kind', 'label']) ||
+      !validString(value.id) || !value.id.length || encoder.encode(value.id).length > 64 ||
+      !validString(value.label) || !value.label.length || encoder.encode(value.label).length > 512 ||
+      !ownKeys(value.range, ['lowerBound', 'upperBound']) ||
+      !counter(value.range.lowerBound) || !counter(value.range.upperBound) ||
+      value.range.upperBound < value.range.lowerBound || !validString(value.expectedText) ||
+      value.expectedText.length !== value.range.upperBound - value.range.lowerBound) return false
+  return value.kind === 'removed' ? value.expectedText.length === 0
+    : ['added', 'changed'].includes(value.kind) && value.expectedText.length > 0
+}
+
 /** This is editor integration only. Swift owns draft policy, durability,
  * processing and host delivery. One receiver is scoped to one actual page. */
 export function createLocalWritingBridge(getEditor, postSnapshot) {
@@ -221,6 +234,23 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     state.missedCapture = false
     return copy(snapshot)
   }
+  const annotations = createLocalWritingAnnotations(getEditor, ({ setID, expectedDocumentSequence, marker }) => {
+    const editor = getEditor()
+    if (!state || state.retired || !editor?.isEditable || editor.view.composing || composition.kind !== 'settled') return false
+    try {
+      const snapshot = capture()
+      if (snapshot.clock.document !== expectedDocumentSequence ||
+          snapshot.document.plainText.slice(marker.range.lowerBound, marker.range.upperBound) !== marker.expectedText) {
+        annotations.clear()
+        return false
+      }
+      postSnapshot(envelope('annotationActivated', { setID, annotationID: marker.id, snapshot }))
+      return true
+    } catch {
+      annotations.clear()
+      return false
+    }
+  })
   const notify = () => {
     if (!state || state.retired) return
     let message
@@ -230,6 +260,7 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
       message = envelope('snapshot', { snapshot })
       identity = `snapshot:${snapshot.clock.document}:${snapshot.clock.selection}:${snapshot.clock.input}`
     } catch (error) {
+      annotations.clear()
       state.missedCapture = true
       message = fail(error.message)
       identity = `unavailable:${error.message}`
@@ -290,10 +321,44 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     }
     if (value.operation === 'setInputEnabled') {
       if (typeof value.enabled !== 'boolean') return fail('invalidRequest')
+      if (!value.enabled) annotations.clear()
       editor.setEditable(value.enabled, false)
       return envelope('inputEnabled', { enabled: value.enabled })
     }
+    if (value.operation === 'setAnnotations') {
+      if (!uuid(value.setID)) return fail('invalidRequest')
+      // Requests are serialized by the owner. A new scoped request supersedes
+      // the old set even when its source became stale before reaching WebKit.
+      annotations.clear()
+      const response = accepted => envelope('annotations', { setID: value.setID, accepted })
+      if (!counter(value.expectedDocumentSequence) || !Array.isArray(value.annotations) ||
+          value.annotations.length > 256 || !value.annotations.every(validAnnotation) ||
+          new Set(value.annotations.map(marker => marker.id)).size !== value.annotations.length) return response(false)
+      // Clearing a stale set does not require ownership of an old document
+      // sequence. It still requires this page's owner and command namespace.
+      if (!value.annotations.length) return response(true)
+      if (!editor.isEditable || editor.view.composing || composition.kind !== 'settled') return response(false)
+      try {
+        const snapshot = capture()
+        if (snapshot.clock.document !== value.expectedDocumentSequence) return response(false)
+        const projection = projectionFor(editor.state.doc)
+        const markers = copy(value.annotations).sort((a, b) => a.range.lowerBound - b.range.lowerBound ||
+          a.range.upperBound - b.range.upperBound)
+        let previousEnd = 0
+        for (const marker of markers) {
+          const { lowerBound: lower, upperBound: upper } = marker.range
+          if (lower < previousEnd || !graphemeBoundary(projection.text, lower) ||
+              !graphemeBoundary(projection.text, upper) || projection.text.slice(lower, upper) !== marker.expectedText) return response(false)
+          marker.from = projection.boundary(lower)
+          marker.to = projection.boundary(upper)
+          previousEnd = upper
+        }
+        annotations.install({ setID: value.setID, expectedDocumentSequence: value.expectedDocumentSequence, markers })
+        return response(true)
+      } catch { return response(false) }
+    }
     if (value.operation === 'retire') {
+      annotations.clear()
       state.retired = true
       state.snapshot = null
       state.baselineHTML = null
@@ -378,8 +443,11 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
 
   return {
     request,
+    annotationPlugin: annotations.plugin,
+    clearAnnotations: annotations.clear,
     transaction: notify,
     reset() {
+      annotations.clear()
       state = null
       lastNotification = null
       clearProjection()
@@ -388,11 +456,13 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     },
     attach(editor) {
       editor.view.dom.addEventListener('compositionstart', () => {
+        annotations.clear()
         compositionGeneration++
         composition = { kind: 'composing', id: newUUID() }
         notify()
       }, true)
       editor.view.dom.addEventListener('compositionend', () => {
+        annotations.clear()
         const generation = ++compositionGeneration
         composition = { kind: 'awaitingSettlement', id: composition.id ?? newUUID() }
         notify()

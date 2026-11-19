@@ -189,6 +189,46 @@ does not silently normalize it. LF and tab round-trip unchanged. The exact wire
 fields and bounded receipt policy live in
 [`WebEditor/src/local-writing-bridge.js`](WebEditor/src/local-writing-bridge.js).
 
+### Source-bound review annotations
+
+The local-writing profile also accepts ephemeral inline annotations. They are
+ProseMirror decorations, not document nodes or marks: installing, inspecting or
+clearing them does not change text, HTML, selection, snapshot clocks or history.
+The native application owns edit classification, identity and rejection policy.
+
+Send `operation: "setAnnotations"` with the current `owner` and `namespace`, a
+fresh `setID` UUID, `expectedDocumentSequence` matching the snapshot's document
+clock, and an `annotations` array. Each entry contains:
+
+- `id`: a nonempty, exact UTF-8 identity of at most 64 bytes, unique within the set.
+- `range`: canonical UTF-16 `lowerBound`/`upperBound` at grapheme boundaries.
+- `expectedText`: the exact current text in that range.
+- `kind`: `"added"`, `"changed"` or `"removed"`. Only removed entries have an empty range.
+- `label`: a nonempty localized accessibility label of at most 512 UTF-8 bytes.
+
+Sets are limited to 256 nonoverlapping entries and the normal 256 KiB message
+bound. Acknowledgments contain `status: "annotations"`, the requested `setID`
+and `accepted`. Requests must be serialized by the native owner. Each validly
+scoped request supersedes the previous set, including a refused stale set. An
+empty array clears annotations even if its expected document sequence is old.
+
+Text edits have dotted highlights with keyboard activation. Deletions and
+whitespace-only edits have explicit boundary buttons with CSS-only symbols.
+Labels are literal attributes. Decorations and their labels are omitted from
+document serialization and clipboard copying. A short stationary text tap opens
+the annotation after a brief delay; another press, selection gesture, context
+menu or document change cancels it. Long press and drag retain normal selection
+behavior. Keyboard and assistive-technology activation are immediate.
+
+Activation arrives through `context.$localWritingSnapshotJSON` as
+`status: "annotationActivated"`, `setID`, `annotationID` and a coherent settled
+`snapshot`. The receiver revalidates the document sequence and exact text before
+emitting it. The application must still validate the live set and edit identity
+before presenting details. Selection-only changes retain annotations. Typing,
+formatting, undo/redo, composition, disabled input, a replacement baseline or
+retirement clears them; they never silently map through changed text or revive
+from history. The standard profile does not install this annotation plugin.
+
 Use `setInputEnabled` with `enabled: false` to preserve a read-only draft for recovery. The
 `retire` operation instead disables/blurs input, clears live text and undo/redo,
 drops pending payloads, and refuses the old owner. Storage deletion is still an
@@ -269,6 +309,7 @@ locks the TipTap 3.20 dependency graph and esbuild. With Node.js 20 or newer:
 cd WebEditor
 npm ci --ignore-scripts
 npm run verify
+npm test
 ```
 
 `verify` rebuilds in memory and compares every byte with the committed
@@ -276,6 +317,10 @@ npm run verify
 `npm run build` and commit the source, lockfile, and generated bundle together.
 The Swift package still loads the committed asset without a Node.js dependency
 at app build or runtime.
+
+The annotation tests execute the committed production bundle in Node/JSDOM,
+including real ProseMirror clipboard and history paths. They do not establish
+WKWebView gesture timing, rendered layout, VoiceOver or native IME behavior.
 
 ## Architecture
 

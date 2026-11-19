@@ -1,4 +1,4 @@
-import { Editor, Node, createDocument } from '@tiptap/core'
+import { Editor, Extension, Node, createDocument } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -66,6 +66,10 @@ window.initEditor = function(content, placeholder) {
       ...(!localWriting ? [Image.configure({ inline: false, allowBase64: true })] : []),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Underline,
+      ...(localBridge ? [Extension.create({
+        name: 'localWritingAnnotations',
+        addProseMirrorPlugins() { return [localBridge.annotationPlugin] }
+      })] : []),
     ],
     content: content || '',
     onTransaction: () => { localBridge?.transaction() },
@@ -118,6 +122,7 @@ window.getContent = function() { return editor ? editor.getHTML() : ''; };
 window.setEditable = function(value) {
   // Local-writing input is enabled only by the acknowledged bridge after its
   // actual baseline is admitted. Generic wrapper readiness must not bypass it.
+  if (value === false) localBridge?.clearAnnotations()
   if (editor && (!localWriting || value === false)) editor.setEditable(value, false)
 }
 window.focus = function() { if (editor) editor.commands.focus(); };
