@@ -1,10 +1,12 @@
-import { Editor, Node } from '@tiptap/core';
+import { Editor, Node, createDocument } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
 import Underline from '@tiptap/extension-underline';
+import { EditorState } from '@tiptap/pm/state'
+import { closeHistory } from '@tiptap/pm/history'
 
 // Keep ruby markup editable and serializable, including its reading and fallback text.
 const Ruby = Node.create({
@@ -25,10 +27,16 @@ const RubyParenthesis = Node.create({
 
 let editor = null;
 const bridgeGeneration = window.__tipTapBridgeGeneration;
+// A WKWebView can host multiple page lifetimes. Queued native work must name
+// the page it came from before it is allowed to mutate a replacement page.
+const pageGeneration = Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join('-')
 let contentGeneration = null;
 window.initEditor = function(content, placeholder) {
   editor = new Editor({
     element: document.querySelector('#editor'),
+    // Native initialization installs the authoritative binding before enabling
+    // input, so typing cannot be discarded while the first baseline is loading.
+    editable: false,
     extensions: [
       StarterKit, Ruby, RubyText, RubyParenthesis,
       Link.configure({
@@ -49,19 +57,46 @@ window.initEditor = function(content, placeholder) {
       const html = editor.getHTML();
       window.webkit.messageHandlers.contentChanged.postMessage({ bridgeGeneration, contentGeneration, html });
     },
-    onCreate: () => { window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration }); },
+    onCreate: () => { window.requestEditorReady() },
   });
 };
-window.setContent = function(html, generation) {
-  if (!editor) return;
-  if (typeof generation === 'string') contentGeneration = generation;
-  // TipTap 3 takes an options object. Native replacement and direct editor
-  // commands both publish normalized HTML under the current content owner.
-  editor.commands.setContent(html, { emitUpdate: true });
-};
+window.requestEditorReady = function() {
+  if (!editor) return
+  window.webkit.messageHandlers.editorReady.postMessage({ bridgeGeneration, pageGeneration })
+}
+window.isEditorPageGeneration = function(generation) { return !!editor && generation === pageGeneration }
+window.loadContent = function(html, generation) {
+  if (!editor) return
+  contentGeneration = generation
+  // Loading establishes a baseline, not an edit. Let TipTap normalize the
+  // document, then reset plugin state as well as selection and stored marks.
+  // Merely setting addToHistory:false leaves undo/redo from the previous doc.
+  editor.commands.setContent(html, { emitUpdate: false })
+  editor.view.updateState(EditorState.create({
+    schema: editor.state.schema,
+    doc: editor.state.doc,
+    plugins: editor.state.plugins,
+  }))
+}
+window.setContent = function(html) {
+  if (!editor) return
+  const document = createDocument(html, editor.schema, {}, {
+    errorOnInvalidContent: editor.options.enableContentCheck,
+  })
+  // An equivalent replacement must not consume an undo step or discard redo.
+  // Compare parsed documents so equivalent markup (such as b/strong) is a no-op.
+  if (document.eq(editor.state.doc)) return
+  // Programmatic edits (for example, accepting a rewrite) are one undo step,
+  // independent of the typing or replacements immediately before and after.
+  editor.view.dispatch(closeHistory(editor.state.tr))
+  editor.commands.setContent(document, { emitUpdate: true })
+  editor.view.dispatch(closeHistory(editor.state.tr))
+}
+window.undo = function() { return editor ? editor.commands.undo() : false }
+window.redo = function() { return editor ? editor.commands.redo() : false }
 window.isEditorContentGeneration = function(generation) { return generation === contentGeneration; };
 window.getContent = function() { return editor ? editor.getHTML() : ''; };
-window.setEditable = function(value) { if (editor) editor.setEditable(value); };
+window.setEditable = function(value) { if (editor) editor.setEditable(value, false) }
 window.focus = function() { if (editor) editor.commands.focus(); };
 window.isActive = function(name, attrs) { return editor ? editor.isActive(name, attrs) : false; };
 window.setTheme = function(theme) { document.documentElement.setAttribute('data-theme', theme); };
