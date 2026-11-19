@@ -3,6 +3,7 @@ import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import { getHTMLFromFragment } from '@tiptap/core'
 import { createLocalWritingAnnotations } from './local-writing-annotations.js'
+import { createLocalWritingHistory } from './local-writing-history.js'
 
 const VERSION = 1
 const MAX_BYTES = 262144
@@ -207,6 +208,7 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
   const capture = () => {
     const editor = getEditor()
     if (!editor || !state || state.retired) throw new Error('editorUnavailable')
+    state.history.observeDocument(editor.state.doc)
     const projection = projectionFor(editor.state.doc)
     const from = projection.inverse.get(editor.state.selection.from)
     const to = projection.inverse.get(editor.state.selection.to)
@@ -224,14 +226,15 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     const previous = state.snapshot
     const clock = previous ? { ...previous.clock } : { document: 0, selection: 0, input: 0 }
     if (previous) {
-      if (state.missedCapture || document.html !== previous.document.html || document.plainText !== previous.document.plainText) clock.document = advance(clock.document)
+      if (state.missedCapture || state.history.documentChanged || document.html !== previous.document.html || document.plainText !== previous.document.plainText) clock.document = advance(clock.document)
       if (state.missedCapture || !equal(selection, previous.selection)) clock.selection = advance(clock.selection)
       if (state.missedCapture || !equal(composition, previous.composition)) clock.input = advance(clock.input)
     }
-    const snapshot = { owner: state.owner, clock, document, selection, composition: copy(composition) }
+    const snapshot = { owner: state.owner, clock, document, selection, composition: copy(composition), history: state.history.snapshot }
     if (bytes(snapshot) > MAX_SNAPSHOT_BYTES) throw new Error('payloadTooLarge')
     state.snapshot = snapshot
     state.missedCapture = false
+    state.history.captured()
     return copy(snapshot)
   }
   const annotations = createLocalWritingAnnotations(getEditor, ({ setID, expectedDocumentSequence, marker }) => {
@@ -311,7 +314,8 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
         } catch { return fail('invalidRange') }
       }
       state = { owner: copy(value.owner), namespace: value.namespace, baselineHTML: value.expectedHTML,
-        snapshot: null, highest: 0, receipts: new Map(), receiptBytes: 0, retired: false }
+        snapshot: null, highest: 0, receipts: new Map(), receiptBytes: 0, retired: false,
+        history: createLocalWritingHistory(editor.state.doc, newUUID) }
       try { const snapshot = capture(); notify(); return envelope('snapshot', { snapshot }) }
       catch (error) { state = null; return fail(error.message) }
     }
@@ -364,6 +368,7 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
       state.baselineHTML = null
       state.receipts.clear()
       state.receiptBytes = 0
+      state.history = null
       clearProjection()
       compositionGeneration++
       composition = { kind: 'settled', id: null }
@@ -430,11 +435,18 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
           bytes({ ...before, document: { ...before.document, html: candidateHTML, plainText: expected } }) > MAX_SNAPSHOT_BYTES - 128) {
         return reject(value, 'editorUnavailable', requestJSON)
       }
+      transaction = state.history.prepare(transaction, value.id)
       editor.view.dispatch(transaction)
+      state.history.finish()
       editor.view.dispatch(closeHistory(editor.state.tr))
       const after = capture()
+      if (after.history.epoch !== before.history.epoch ||
+          after.history.checkpoint?.namespace !== value.id.namespace || after.history.checkpoint?.ordinal !== value.id.ordinal) {
+        return envelope('outcomeUnavailable', { id: copy(value.id) })
+      }
       return remember(value.id.ordinal, requestJSON, receipt(value.id, 'applied', after))
     } catch {
+      state.history?.finish()
       // After dispatch, never manufacture a rejection. If projection capture
       // unexpectedly fails, the issued ordinal remains consumed for reconciliation.
       return envelope('outcomeUnavailable', { id: copy(value.id) })
@@ -445,7 +457,10 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     request,
     annotationPlugin: annotations.plugin,
     clearAnnotations: annotations.clear,
-    transaction: notify,
+    transaction(transaction, appendedTransactions) {
+      if (state && !state.retired) state.history.observe(transaction, appendedTransactions, getEditor()?.state.doc)
+      notify()
+    },
     reset() {
       annotations.clear()
       state = null
@@ -456,9 +471,12 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     },
     attach(editor) {
       editor.view.dom.addEventListener('compositionstart', () => {
-        annotations.clear()
         compositionGeneration++
         composition = { kind: 'composing', id: newUUID() }
+        if (state && !state.retired) state.history.invalidate()
+        // Clearing decorations can dispatch synchronously. Publish the new
+        // composition/input clock with the invalidated epoch in that event.
+        annotations.clear()
         notify()
       }, true)
       editor.view.dom.addEventListener('compositionend', () => {

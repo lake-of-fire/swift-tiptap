@@ -72,7 +72,7 @@ window.initEditor = function(content, placeholder) {
       })] : []),
     ],
     content: content || '',
-    onTransaction: () => { localBridge?.transaction() },
+    onTransaction: ({ transaction, appendedTransactions }) => { localBridge?.transaction(transaction, appendedTransactions) },
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       window.webkit.messageHandlers.contentChanged.postMessage({ bridgeGeneration, contentGeneration, html });

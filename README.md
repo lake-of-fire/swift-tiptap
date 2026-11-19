@@ -189,6 +189,43 @@ does not silently normalize it. LF and tab round-trip unchanged. The exact wire
 fields and bounded receipt policy live in
 [`WebEditor/src/local-writing-bridge.js`](WebEditor/src/local-writing-bridge.js).
 
+### Reversible command provenance
+
+Local-writing snapshots include transient `history` evidence:
+
+```json
+{"epoch":"receiver-generated UUID","checkpoint":{"namespace":"command namespace UUID","ordinal":1}}
+```
+
+An admitted baseline has `checkpoint: null`. A changed source-bound replacement
+sets the checkpoint to its acknowledged command ID. Actual ProseMirror Undo/Redo
+restores the checkpoint before/after that command in the same transaction as the
+text. Private frozen Step delegates carry this evidence through history, with
+no added document content or serializable form. A replay must contain exactly
+the admitted event's Steps, order and direction; extra ordinary Steps cannot
+borrow its checkpoint. The existing bounded ProseMirror history owns their
+lifetime. There is no additional document archive or history endpoint.
+Both Step directions are sealed against the admitted source. Validation replays
+the event transiently and checks its document/maps, so hidden mutations of a
+history transaction cannot reuse that evidence. A mapped Step keeps ordinary
+ProseMirror editing behavior but loses source-bound provenance.
+
+An ordinary document transaction, including a same-text edit, formatting or
+`addToHistory: false`, permanently changes the epoch and clears the checkpoint.
+Composition start does so immediately, even when composition produces no text.
+Undoing ordinary typing back to identical bytes never revives an earlier epoch.
+Document clocks advance for actual document transactions even when their final
+HTML/text are equal. Composition changes advance the input clock. Selection,
+annotations, unchanged replacements and refused commands preserve the evidence.
+Baseline replacement and retirement discard it with the editor history.
+
+The application may restore product state only for checkpoints belonging to its
+own acknowledged commands, with the same admitted owner, namespace and epoch.
+It must still validate the live revision, settled composition and exact source
+range, bound its transient ledger, and discard old authority when a new capture
+starts. Text equality alone does not grant ownership. This evidence does not
+restore host-field authority or survive a WebKit/page reload.
+
 ### Source-bound review annotations
 
 The local-writing profile also accepts ephemeral inline annotations. They are
@@ -318,7 +355,7 @@ npm test
 The Swift package still loads the committed asset without a Node.js dependency
 at app build or runtime.
 
-The annotation tests execute the committed production bundle in Node/JSDOM,
+The annotation and history tests execute the committed production bundle in Node/JSDOM,
 including real ProseMirror clipboard and history paths. They do not establish
 WKWebView gesture timing, rendered layout, VoiceOver or native IME behavior.
 
