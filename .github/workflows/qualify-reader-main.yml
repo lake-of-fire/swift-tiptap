@@ -1,0 +1,48 @@
+name: Qualify canonical swift-tiptap for Reader
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/qualify-reader-main.yml'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - 'Sources/**'
+      - 'Tests/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [debug, release]
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify SDK and record exact revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcode-select --print-path
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          if [ "${sdk_version%%.*}" -lt 26 ]; then
+            printf 'Required macOS SDK 26 or newer; selected SDK is %s\n' "$sdk_version" >&2
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          git rev-parse HEAD 'HEAD^{tree}'
+          xcrun --find swift
+          xcrun swift --version
+          xcrun --sdk macosx --show-sdk-path
+          printf 'macOS SDK version: %s\n' "$sdk_version"
+      - name: Install build output formatter
+        run: brew install xcsift
+      - name: Test ${{ matrix.configuration }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swift test -c ${{ matrix.configuration }} 2>&1 | xcsift

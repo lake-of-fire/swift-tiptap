@@ -21,7 +21,8 @@ extension String {
         guard !trimmed.isEmpty else { return trimmed }
 
         // Already has a scheme
-        if trimmed.contains("://") || trimmed.hasPrefix("mailto:") || trimmed.hasPrefix("tel:") {
+        let lowercase = trimmed.lowercased()
+        if trimmed.contains("://") || lowercase.hasPrefix("mailto:") || lowercase.hasPrefix("tel:") {
             return trimmed
         }
 
