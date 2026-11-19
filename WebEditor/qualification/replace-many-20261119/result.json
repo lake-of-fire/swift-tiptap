@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-19T18:36:19.443146+00:00",
+  "baseCommit": "301af0f31de2915abe4ffb701c6841c22897d9d4",
+  "scope": "Actual bundled Tiptap/ProseMirror in Node/JSDOM",
+  "result": "passed",
+  "node": "v24.22.3",
+  "commands": [
+    {
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "verify"
+      ],
+      "exitCode": 0,
+      "result": "Bundle matches locked source build"
+    },
+    {
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exitCode": 0,
+      "log": "test.log",
+      "logSHA256": "2a78c63fae5e9a58dd81d1fdfb7789b27b86239647834d0f2554200eea388ae9",
+      "tests": 57,
+      "pass": 57,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    }
+  ],
+  "batchTests": 20,
+  "existingAnnotationAndHistoryTests": 37,
+  "sourceSHA256": {
+    "Sources/TipTapSwift/Resources/RichTextEditor/tiptap-bundle.js": "d627bbc92e662b0b4a3575f510f93e64e9334388b432753ab5d7c6b4fd01dbd9",
+    "WebEditor/build-bundle.mjs": "176e7ece5c914b4bff6afc6ebc1502b7f82ad06f2f5242a3a278ca91db28f355",
+    "WebEditor/package-lock.json": "864f3f4a9a5a22304eb4e5085a6ce7bdc865724a32dddcf57a7fbe121194b72a",
+    "WebEditor/package.json": "eed89e06d003a69dce808960e4853dd07cdf98e35517216111d3d22a393e20d0",
+    "WebEditor/src/editor.js": "cdbc37b941c2d7388ecc5588035197e5d599a7c6293da0854106df56900762e4",
+    "WebEditor/src/local-writing-annotations.js": "2eafc1464f14340477de640ddc256769cad2bddccac42b17bbdd58f3ae8cb05d",
+    "WebEditor/src/local-writing-bridge.js": "3074df8fe276d3ed5f431e868e1a828665dcfd1aa6608a045b084cbd1dbcfd4c",
+    "WebEditor/src/local-writing-history.js": "7114e99b32130142c49ee00c28f57ed6ffa8a6d7c39b88926761e7505e6d118c",
+    "WebEditor/test/annotations.test.mjs": "e78e22fd0a0921aaa470dee9c1210f4bd68cee4998dbc8fbb442090d1f431f83",
+    "WebEditor/test/history.test.mjs": "9a96c4862adeff279cff99b6c4d65df586df0d674536d8b1554677ac400c24ab",
+    "WebEditor/test/replace-many.test.mjs": "691d5645a972cf6d365fa6bbacfdf878510d253b1f2d465adf19fb8c621b325c"
+  },
+  "appleSDKBuild": "not-run",
+  "nativeWKWebViewAndIME": "not-run",
+  "paidMacCI": "not-run"
+}

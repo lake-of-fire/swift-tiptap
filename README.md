@@ -176,6 +176,31 @@ original receipt; evicted old ordinals remain consumed. A `revoke` request
 prevents a not-yet-applied ordinal from applying later, or returns its existing
 outcome. Cancelling a Swift task alone does not prove cancellation of a WebKit edit.
 
+`replaceMany` uses the same owner, namespace, command ID, source clock and
+schema/projection versions, with `replacements` containing 1–128 objects:
+
+```json
+{"range":{"lowerBound":0,"upperBound":3},"expectedText":"new","replacement":"old"}
+```
+
+Every range refers to the same initial canonical text. Ranges must be in strictly
+ascending start order and must not overlap; duplicate starts are refused even
+for insertions. The receiver validates every member, its exact source and its
+Unicode boundaries before building any mutation. Changed spans are replaced in
+reverse order in one transaction, keeping intervening marks and nodes intact.
+Touched ruby annotations are unwrapped once. Unchanged members do not remove
+their marks or ruby, and an aggregate result equal to the original text returns
+`noChange` with the original snapshot, selection and redo history.
+
+The whole batch has one receipt, history checkpoint and Undo/Redo event. Its
+final caret follows the highest source-range member, adjusted for all earlier
+edits and advanced to the next complete grapheme boundary when needed. The
+existing message, snapshot and receipt limits still apply. An older receiver
+does not recognize this operation and refuses it instead of substituting an
+enclosing plain-text replacement. Applications own the choice of edits and any
+semantic dependency policy; this operation does not infer relationships between
+them. [Portable batch verification](WebEditor/qualification/replace-many-20261119/README.md)
+
 Canonical v1 text preserves Unicode and whitespace, uses one LF per actual
 text-block boundary/hard break, omits visual list markers and ruby readings,
 and retains empty/trailing blocks. Editing a simple ruby base invalidates that
@@ -355,7 +380,7 @@ npm test
 The Swift package still loads the committed asset without a Node.js dependency
 at app build or runtime.
 
-The annotation and history tests execute the committed production bundle in Node/JSDOM,
+The annotation, history and batch tests execute the committed production bundle in Node/JSDOM,
 including real ProseMirror clipboard and history paths. They do not establish
 WKWebView gesture timing, rendered layout, VoiceOver or native IME behavior.
 

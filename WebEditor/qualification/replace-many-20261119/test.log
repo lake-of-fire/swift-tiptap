@@ -1,0 +1,74 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> swift-tiptap-web-editor@0.1.0 test
+> node --test test/*.test.mjs
+
+✔ inline and deletion annotations leave exact text, HTML, clocks, selection and history unchanged (209.52199ms)
+✔ actual clipboard copy omits every decoration, its label and deletion marker (385.883851ms)
+✔ selection changes retain markers and activation carries the actual selected revision (76.856224ms)
+✔ deletions at either edge and an empty paragraph remain reachable without modifying the caret (236.767455ms)
+✔ short inline taps open details while drag, long press, double click and range selections keep native behavior (609.064032ms)
+✔ pending physical taps cannot open a marker after composition, editing or retirement (1093.10809ms)
+✔ keyboard activation opens an inline edit and labels are literal attributes (210.335498ms)
+✔ typing, formatting, undo and redo clear markers before any stale activation (42.9352ms)
+✔ installing and clearing annotations preserves an existing redo entry (29.192993ms)
+✔ composition clears markers, refuses new ones, and does not revive them after settlement (31.719813ms)
+✔ input disabling through either transport removes annotations and reenabling does not restore them (37.240576ms)
+✔ baseline reload and retirement invalidate annotations even if text is identical (27.300237ms)
+✔ wrong owners cannot install or clear another editor set; scoped stale clear still succeeds (46.192199ms)
+✔ stale sequence, mismatched exact Unicode and split graphemes refuse the entire set (52.232172ms)
+✔ bounded annotation IDs, labels, counts, kinds and ranges reject malformed sets without touching the text (35.521812ms)
+✔ ruby bases and block boundaries use canonical positions while preserving source markup (71.843064ms)
+✔ newline-only and whitespace edits have visible boundary controls without copying synthetic text (33.604788ms)
+✔ standard profile has no annotation bridge or plugin (38.237576ms)
+✔ each owned insertion, individual rejection and whole revert is one real undo event (564.114357ms)
+✔ selection, decorations and unchanged/refused commands preserve checkpoint and redo (201.22684ms)
+✔ ordinary typing then Undo to identical bytes can never restore earlier authority (49.793014ms)
+✔ equal-text real transactions advance the document clock and revoke provenance (51.24662ms)
+✔ format-only and non-history edits revoke even when visible source text remains (103.018851ms)
+✔ composition start revokes immediately without text, including when annotations dispatch a clear (61.275147ms)
+✔ platform historyUndo/historyRedo events carry actual checkpoint provenance (55.694729ms)
+✔ history marker is private, nonserializable and cannot be replayed as an ordinary transaction (58.622984ms)
+✔ wrong owners, arbitrary request metadata and old receipts cannot move the live history cursor (39.911898ms)
+✔ a new baseline and retirement erase checkpoints and actual undo history (42.194652ms)
+✔ same-content state replacement outside transactions cannot inherit provenance (89.619404ms)
+✔ ruby invalidation and exact Unicode restoration stay in the same owned history event (49.606753ms)
+✔ an appended document edit cannot borrow an owned replacement acknowledgment (38.099458ms)
+✔ extra ordinary steps inside a real Undo cannot restore an owned checkpoint on Redo (85.838032ms)
+✔ same-count replacement of a private history step cannot borrow provenance (33.98516ms)
+✔ reordered private steps cannot produce an owned replacement acknowledgment (50.524283ms)
+✔ hidden compiled document edits fail even when steps, docs and maps are trimmed consistently (47.194046ms)
+✔ a document mutation with all steps hidden still revokes and advances the document clock (37.572716ms)
+✔ checkpoint markers share the bounded PM history depth without retaining a second archive (528.581158ms)
+✔ nonadjacent replacements preserve intervening rich markup in one actual Undo and Redo (475.331301ms)
+✔ an earlier rejection with its own marks survives a later enclosing batch (201.966087ms)
+✔ one command replay and revoke recover the batch receipt without applying twice (79.189433ms)
+✔ unchanged and aggregate-equivalent batches preserve selection, markup and redo exactly (110.515885ms)
+✔ unchanged patches do not strip a ruby or intervening marks in a changed batch (75.671842ms)
+✔ two edits within one ruby unwrap it once and Undo restores the exact reading and marks (42.381587ms)
+✔ all initial ranges are validated before a bad later patch can change text or history (60.224247ms)
+✔ empty, oversized, out-of-order and duplicate-start batches are refused before mutation (207.310444ms)
+✔ original scalar and grapheme boundaries reject split emoji, combining marks and ZWJ sequences (62.973406ms)
+▶ mixed insertion, deletion and replacements preserve canonical bytes across newly joined graphemes
+  ✔ AB́Q (80.003597ms)
+  ✔ 👩‍💻? (49.286142ms)
+  ✔ が。👩🏽‍💻尾 (80.042886ms)
+  ✔ first
+middle
+last (40.33528ms)
+✔ mixed insertion, deletion and replacements preserve canonical bytes across newly joined graphemes (251.321803ms)
+✔ stale source, selection, owner and IME cannot admit a partial batch (40.821662ms)
+✔ wire and candidate snapshot limits refuse before dispatching any batch edit (87.11381ms)
+✔ appended edits cannot borrow a batch acknowledgment or its replay authority (43.916711ms)
+▶ reordering or hiding a batch history step invalidates the whole event
+  ✔ reverse (37.510202ms)
+  ✔ hidden (32.557683ms)
+✔ reordering or hiding a batch history step invalidates the whole event (71.270273ms)
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4078.951178

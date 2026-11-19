@@ -11,6 +11,7 @@ const MAX_BYTES = 262144
 const MAX_SNAPSHOT_BYTES = MAX_BYTES - 1024
 const MAX_RECEIPT_BYTES = 1048576
 const MAX_RECEIPTS = 16
+const MAX_REPLACEMENTS = 128
 const encoder = new TextEncoder()
 const segmenter = typeof Intl.Segmenter === 'function'
   ? new Intl.Segmenter('und', { granularity: 'grapheme' }) : null
@@ -379,7 +380,7 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
       postSnapshot(fail('editorUnavailable'))
       return envelope('retired')
     }
-    if (!['replace', 'revoke'].includes(value.operation) || !validID(value.id) || value.id.namespace !== state.namespace) return fail('invalidRequest')
+    if (!['replace', 'replaceMany', 'revoke'].includes(value.operation) || !validID(value.id) || value.id.namespace !== state.namespace) return fail('invalidRequest')
     const requestJSON = JSON.stringify(value)
     const previous = state.receipts.get(value.id.ordinal)
     if (previous) {
@@ -391,39 +392,68 @@ export function createLocalWritingBridge(getEditor, postSnapshot) {
     if (value.id.ordinal <= state.highest) return envelope('outcomeUnavailable', { id: copy(value.id) })
     state.highest = value.id.ordinal
     if (value.operation === 'revoke') return reject(value, 'editorUnavailable', requestJSON)
-    if (!validClock(value.expectedClock) || !ownKeys(value.range, ['lowerBound', 'upperBound']) ||
-        !counter(value.range.lowerBound) || !counter(value.range.upperBound) || value.range.upperBound < value.range.lowerBound ||
-        !validString(value.expectedText) || !validString(value.replacement)) return reject(value, 'invalidRange', requestJSON)
+    const multiple = value.operation === 'replaceMany'
+    const replacements = multiple ? value.replacements : [value]
+    if (!validClock(value.expectedClock) || !Array.isArray(replacements) ||
+        !replacements.length || replacements.length > MAX_REPLACEMENTS ||
+        !replacements.every(part => (!multiple || ownKeys(part, ['range', 'expectedText', 'replacement'])) &&
+          ownKeys(part.range, ['lowerBound', 'upperBound']) &&
+          counter(part.range.lowerBound) && counter(part.range.upperBound) && part.range.upperBound >= part.range.lowerBound &&
+          validString(part.expectedText) && validString(part.replacement))) return reject(value, 'invalidRange', requestJSON)
     if (value.schemaVersion !== 1 || value.projectionVersion !== 1) return reject(value, 'unsupportedProjection', requestJSON)
-    if (!reloadableText(value.replacement)) return reject(value, 'unsupportedProjection', requestJSON)
+    if (!replacements.every(part => reloadableText(part.replacement))) return reject(value, 'unsupportedProjection', requestJSON)
     let before
     try { before = capture() } catch { return reject(value, 'unsupportedProjection', requestJSON) }
     if (composition.kind !== 'settled' || editor.view.composing) return reject(value, 'compositionUnsettled', requestJSON)
     if (!sameClock(value.expectedClock, before.clock)) return reject(value, 'staleSource', requestJSON)
-    const { lowerBound: lower, upperBound: upper } = value.range
     const plain = before.document.plainText
-    if (!graphemeBoundary(plain, lower) || !graphemeBoundary(plain, upper)) return reject(value, 'invalidRange', requestJSON)
-    if (plain.slice(lower, upper) !== value.expectedText) return reject(value, 'staleSource', requestJSON)
-    if (value.expectedText === value.replacement) return remember(value.id.ordinal, requestJSON, receipt(value.id, 'noChange', before))
+    let previousRange = null
+    for (const part of replacements) {
+      const { lowerBound: lower, upperBound: upper } = part.range
+      // All ranges name the initial source. Repeated starts are ambiguous even
+      // when one range is empty; never sort or partially apply a malformed batch.
+      if ((previousRange && (lower <= previousRange.lowerBound || lower < previousRange.upperBound)) ||
+          !graphemeBoundary(plain, lower) || !graphemeBoundary(plain, upper)) return reject(value, 'invalidRange', requestJSON)
+      if (plain.slice(lower, upper) !== part.expectedText) return reject(value, 'staleSource', requestJSON)
+      previousRange = part.range
+    }
+    const changed = replacements.filter(part => part.expectedText !== part.replacement)
+    if (!changed.length) return remember(value.id.ordinal, requestJSON, receipt(value.id, 'noChange', before))
+    // Concatenate against the one admitted source. Applying a later insertion
+    // can join graphemes at an earlier range boundary, so intermediate strings
+    // must not become new source assertions for the remaining batch members.
+    let expected = ''
+    let consumed = 0
+    let desired = 0
+    for (const part of replacements) {
+      expected += plain.slice(consumed, part.range.lowerBound) + part.replacement
+      consumed = part.range.upperBound
+      desired = expected.length
+    }
+    expected += plain.slice(consumed)
+    if (expected === plain) return remember(value.id.ordinal, requestJSON, receipt(value.id, 'noChange', before))
     try {
       let projection = projectionFor(editor.state.doc)
       let transaction = closeHistory(editor.state.tr)
       // A base edit invalidates its entire simple ruby annotation. Unwrap base
-      // children first, preserving marks, in the same transaction and undo event.
-      const touched = projection.rubies.filter(ruby => lower === upper
-        ? lower > ruby.start && lower < ruby.end : lower < ruby.end && upper > ruby.start)
+      // children once, preserving marks, in the same transaction and undo event.
+      const touched = projection.rubies.filter(ruby => changed.some(({ range: { lowerBound: lower, upperBound: upper } }) => lower === upper
+        ? lower > ruby.start && lower < ruby.end : lower < ruby.end && upper > ruby.start))
       for (const ruby of touched.sort((a, b) => b.from - a.from)) {
         transaction = transaction.replaceWith(ruby.from, ruby.to, Fragment.fromArray(ruby.base))
       }
-      projection = projectionFor(transaction.doc)
-      transaction = transaction.insertText(value.replacement, projection.boundary(lower), projection.boundary(upper))
-      const expected = plain.slice(0, lower) + value.replacement + plain.slice(upper)
+      // Highest source offset first leaves every lower canonical offset intact.
+      // Only selected spans are replaced; intervening marks and nodes survive.
+      for (const part of changed.toReversed()) {
+        projection = projectionFor(transaction.doc)
+        transaction = transaction.insertText(part.replacement,
+          projection.boundary(part.range.lowerBound), projection.boundary(part.range.upperBound))
+      }
       const candidateProjection = projectionFor(transaction.doc)
       if (candidateProjection.text !== expected) return reject(value, 'invalidRange', requestJSON)
       // Inserting a combining mark or ZWJ can join neighboring graphemes. Keep
       // the actual resulting caret on the next settled boundary, never expose
       // a snapshot that Swift must reject after the mutation already happened.
-      const desired = lower + value.replacement.length
       const caret = followingGraphemeBoundary(expected, desired)
       transaction = transaction.setSelection(TextSelection.create(transaction.doc, candidateProjection.boundary(caret)))
       // Reserve room for the new document and independently advancing clocks
