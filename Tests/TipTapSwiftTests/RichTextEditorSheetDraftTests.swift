@@ -175,6 +175,228 @@ import XCTest
 final class RichTextEditorReadinessTests: XCTestCase {
 
     @MainActor
+    func testHostedSaveCapturesHeldEditAndPreservesUndoAndOriginalSource() async throws {
+        let ready = expectation(description: "Editor initialized its normalized baseline")
+        let firstEditReachedDraft = expectation(description: "First edit enabled Done")
+        let original = "<p><b>\u{304C}</b></p>"
+        let baseline = "<p><strong>\u{304C}</strong></p>"
+        let firstEdit = "<p>First edit</p>"
+        let latestEdit = "<p><strong>\u{304B}\u{3099}</strong></p>"
+        let store = RichTextEditorSheetDraftStore(htmlContent: original)
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { store.draftHTMLContent }, set: { html in
+                store.syncFromEditor(html)
+                if html == firstEdit { firstEditReachedDraft.fulfill() }
+            }),
+            editorContext: context,
+            onEditorReady: {
+                store.beginTrackingEdits()
+                ready.fulfill()
+            }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        XCTAssertEqual(store.draftHTMLContent, baseline)
+
+        context.replaceContent(with: firstEdit)
+        await fulfillment(of: [firstEditReachedDraft], timeout: 5)
+        XCTAssertTrue(store.hasEdits)
+        let webView = try XCTUnwrap(context.webView)
+        let controller = webView.configuration.userContentController
+        let heldEdit = expectation(description: "Latest edit held before reaching the draft")
+        heldEdit.assertForOverFulfill = false
+        let relay = BridgeMessageCapture(heldEdit) { message in
+            guard let payload = message.body as? [String: Any],
+                  let html = payload["html"] as? String else { return false }
+            return html.utf8.elementsEqual(latestEdit.utf8)
+        }
+        controller.removeScriptMessageHandler(forName: "contentChanged")
+        controller.add(relay, name: "contentChanged")
+        defer { controller.removeScriptMessageHandler(forName: "contentChanged") }
+
+        let saved = expectation(description: "Save captured the queued WebKit edit")
+        context.replaceContent(with: latestEdit)
+        store.save(title: "Title at Save", using: context) { result in
+            defer { saved.fulfill() }
+            guard case let .ready(title, html) = result else { return XCTFail("Capture failed") }
+            XCTAssertEqual(title, "Title at Save")
+            XCTAssertTrue(html.utf8.elementsEqual(latestEdit.utf8))
+        }
+        XCTAssertTrue(store.isSaving)
+        context.replaceContent(with: "<p>Command during Save must not edit the document</p>")
+        store.save(title: "Duplicate Save", using: context) { _ in
+            XCTFail("A pending Save must admit only one request")
+        }
+        await fulfillment(of: [heldEdit, saved], timeout: 5)
+        XCTAssertEqual(store.draftHTMLContent, firstEdit)
+        XCTAssertTrue(store.didCompleteSave)
+        try await assertEditorEditability(false, in: webView)
+        store.endSave()
+        XCTAssertFalse(store.isSaving)
+        try await assertEditorEditability(true, in: webView)
+
+        let history = try await webView.evaluateJavaScript("""
+            (() => {
+                window.undo()
+                const firstUndo = window.getContent()
+                window.redo()
+                const redo = window.getContent()
+                window.undo()
+                window.undo()
+                return [firstUndo, redo, window.getContent()]
+            })()
+            """)
+        let contents = try XCTUnwrap(history as? [String])
+        XCTAssertEqual(contents.first, firstEdit)
+        XCTAssertTrue(try XCTUnwrap(contents.dropFirst().first).utf8.elementsEqual(latestEdit.utf8))
+        XCTAssertEqual(contents.last, baseline)
+
+        let titleOnly = expectation(description: "Title-only Save preserved the original body bytes")
+        store.save(title: "Renamed", using: context) { result in
+            defer { titleOnly.fulfill() }
+            guard case let .ready(title, html) = result else { return XCTFail("Capture failed") }
+            XCTAssertEqual(title, "Renamed")
+            XCTAssertTrue(html.utf8.elementsEqual(original.utf8))
+        }
+        await fulfillment(of: [titleOnly], timeout: 5)
+        store.endSave()
+    }
+
+    @MainActor
+    func testHostedSaveRejectsUnownedRepliesAndCanRetry() async throws {
+        let ready = expectation(description: "Editor ready for Save")
+        let original = "<p>Original</p>"
+        let store = RichTextEditorSheetDraftStore(htmlContent: original)
+        let context = EditorContext()
+        let mounted = MountedEditorView(RichTextEditorView(
+            htmlContent: Binding(get: { store.draftHTMLContent }, set: { store.syncFromEditor($0) }),
+            editorContext: context,
+            onEditorReady: {
+                store.beginTrackingEdits()
+                ready.fulfill()
+            }
+        ))
+        defer { mounted.close() }
+        await fulfillment(of: [ready], timeout: 15)
+        let webView = try XCTUnwrap(context.webView)
+        let coordinator = try XCTUnwrap(webView.navigationDelegate as? RichTextEditorView.Coordinator)
+        let generation = coordinator.contentGeneration
+
+        let rebound = expectation(description: "Old binding reply was rejected")
+        store.save(title: "Retired binding", using: context) { result in
+            defer { rebound.fulfill() }
+            guard case .editorUnavailable = result else { return XCTFail("Accepted a retired binding") }
+        }
+        XCTAssertTrue(store.isSaving)
+        context.unbind(from: webView)
+        context.bind(to: webView, contentGeneration: generation)
+        await fulfillment(of: [rebound], timeout: 5)
+        XCTAssertFalse(store.isSaving)
+
+        let normalizedOnRetiredBinding = expectation(description: "Rebind during normalization rejected the snapshot")
+        store.save(title: "Retired during normalization", using: context, normalizingWith: { html in
+            context.unbind(from: webView)
+            context.bind(to: webView, contentGeneration: generation)
+            return html
+        }) { result in
+            defer { normalizedOnRetiredBinding.fulfill() }
+            guard case .editorUnavailable = result else { return XCTFail("Accepted a snapshot after rebinding") }
+        }
+        await fulfillment(of: [normalizedOnRetiredBinding], timeout: 5)
+        try await assertEditorEditability(true, in: webView)
+
+        let wrongGeneration = expectation(description: "Reply from a different JavaScript document was rejected")
+        context.bind(to: webView, contentGeneration: UUID().uuidString)
+        store.save(title: "Wrong document", using: context) { result in
+            defer { wrongGeneration.fulfill() }
+            guard case .editorUnavailable = result else { return XCTFail("Accepted a different document") }
+        }
+        await fulfillment(of: [wrongGeneration], timeout: 5)
+        XCTAssertFalse(store.isSaving)
+        XCTAssertEqual(store.draftHTMLContent, original)
+
+        context.bind(to: webView, contentGeneration: generation)
+        _ = try await webView.evaluateJavaScript("""
+            window.originalGetContentForSaveTest = window.getContent
+            window.getContent = () => { throw new Error('Capture failed after suspending input') }
+            true
+            """)
+        let failed = expectation(description: "Capture failure retired Save and restored input")
+        store.save(title: "Broken script", using: context) { result in
+            defer { failed.fulfill() }
+            guard case .editorUnavailable = result else { return XCTFail("Capture should have failed") }
+            XCTAssertFalse(store.isSaving)
+        }
+        await fulfillment(of: [failed], timeout: 5)
+        try await assertEditorEditability(true, in: webView)
+        _ = try await webView.evaluateJavaScript("""
+            window.getContent = window.originalGetContentForSaveTest
+            delete window.originalGetContentForSaveTest
+            """)
+
+        store.save(title: "Keep Editing", using: context) { _ in
+            XCTFail("A canceled Save must not complete")
+        }
+        store.cancelPendingSave()
+        try await assertEditorEditability(true, in: webView)
+
+        store.save(title: "Canceled", using: context) { _ in
+            XCTFail("A canceled Save must not complete")
+        }
+        XCTAssertTrue(store.isSaving)
+        store.cancelPendingSave()
+        let retry = expectation(description: "A fresh Save completed")
+        store.save(title: "Retry", using: context) { result in
+            defer { retry.fulfill() }
+            guard case let .ready(title, html) = result else { return XCTFail("Retry failed") }
+            XCTAssertEqual(title, "Retry")
+            XCTAssertEqual(html, original)
+        }
+        await fulfillment(of: [retry], timeout: 5)
+        XCTAssertTrue(store.didCompleteSave)
+        try await assertEditorEditability(false, in: webView)
+        store.endSave()
+        try await assertEditorEditability(true, in: webView)
+        XCTAssertFalse(store.isSaving)
+    }
+
+    @MainActor
+    private func assertEditorEditability(
+        _ expected: Bool, in webView: WKWebView, file: StaticString = #filePath, line: UInt = #line
+    ) async throws {
+        let editable = try await webView.evaluateJavaScript("document.querySelector('.tiptap').isContentEditable")
+        XCTAssertEqual(editable as? Bool, expected, file: file, line: line)
+    }
+
+    @MainActor
+    func testTitleOnlySaveBeforeReadinessHonorsCancellationDuringNormalization() {
+        let original = "<p><b>Original</b></p>"
+        let store = RichTextEditorSheetDraftStore(htmlContent: original)
+        let context = EditorContext()
+        var didNormalize = false
+        store.save(title: "Canceled", using: context, normalizingWith: { html in
+            didNormalize = true
+            store.cancelPendingSave()
+            return html
+        }) { _ in
+            XCTFail("Normalization retired this Save")
+        }
+        XCTAssertTrue(didNormalize)
+        XCTAssertFalse(store.isSaving)
+
+        var didSave = false
+        store.save(title: "Renamed", using: context) { result in
+            didSave = true
+            guard case let .ready(title, html) = result else { return XCTFail("Title-only Save failed") }
+            XCTAssertEqual(title, "Renamed")
+            XCTAssertEqual(html, original)
+        }
+        XCTAssertTrue(didSave)
+        store.endSave()
+    }
+
+    @MainActor
     func testHostedEditorLoadsCanonicalEquivalentButByteDistinctNativeBaseline() async throws {
         let ready = expectation(description: "Composed baseline loaded")
         let composed = "<p>\u{304C}</p>"

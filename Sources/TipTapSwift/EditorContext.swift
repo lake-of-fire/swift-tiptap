@@ -8,6 +8,7 @@
 import SwiftUI
 import WebKit
 import Combine
+import Foundation
 
 /// A command channel that lets native SwiftUI controls trigger TipTap formatting.
 ///
@@ -21,14 +22,20 @@ public final class EditorContext: ObservableObject {
     /// Set by RichTextEditorView's coordinator once the WKWebView is created.
     weak var webView: WKWebView?
     private var contentGeneration: String?
+    private var bindingID = UUID()
+    private var saveCaptureID: UUID?
 
     func bind(to webView: WKWebView, contentGeneration: String?) {
+        if let saveCaptureID { releaseSaveCapture(saveCaptureID) }
+        bindingID = UUID()
         self.webView = webView
         self.contentGeneration = contentGeneration
     }
 
     func unbind(from webView: WKWebView) {
         guard self.webView === webView else { return }
+        if let saveCaptureID { releaseSaveCapture(saveCaptureID) }
+        bindingID = UUID()
         self.webView = nil
         contentGeneration = nil
     }
@@ -130,12 +137,56 @@ public final class EditorContext: ObservableObject {
         run("window.setImage('\(escapedURL)', '\(escapedAlt)')")
     }
 
+    /// Suspends input and reads the web document at the same JavaScript boundary.
+    func captureHTMLForSave(_ requestID: UUID, completion: @escaping @MainActor (String?) -> Void) {
+        guard saveCaptureID == nil, let webView, let generation = contentGeneration else {
+            completion(nil)
+            return
+        }
+        saveCaptureID = requestID
+        let bindingID = bindingID
+        webView.evaluateJavaScript("""
+            (() => {
+                if (!window.isEditorContentGeneration?.('\(generation)')) return null
+                window.__tipTapSaveCaptureID = '\(requestID.uuidString)'
+                window.setEditable(false)
+                return window.getContent()
+            })()
+            """) { [weak self, weak webView] result, error in
+            guard let self, let webView, self.webView === webView,
+                  self.contentGeneration == generation, self.bindingID == bindingID,
+                  self.saveCaptureID == requestID, error == nil else {
+                completion(nil)
+                return
+            }
+            completion(result as? String)
+        }
+    }
+
+    func ownsSaveCapture(_ requestID: UUID) -> Bool {
+        saveCaptureID == requestID && webView != nil
+    }
+
+    func releaseSaveCapture(_ requestID: UUID) {
+        guard saveCaptureID == requestID else { return }
+        saveCaptureID = nil
+        guard let webView, let generation = contentGeneration else { return }
+        webView.evaluateJavaScript("""
+            if (window.__tipTapSaveCaptureID === '\(requestID.uuidString)') {
+                delete window.__tipTapSaveCaptureID
+                if (window.isEditorContentGeneration?.('\(generation)')) window.setEditable(true)
+            }
+            """) { _, _ in }
+    }
+
     // MARK: - Private
 
     private func run(_ js: String) {
-        guard let webView, let contentGeneration else { return }
+        guard saveCaptureID == nil, let webView, let contentGeneration else { return }
         // A command queued by the previous context cannot format replacement
         // content if WebKit executes it after that content has been installed.
-        webView.evaluateJavaScript("if (window.isEditorContentGeneration?.('\(contentGeneration)')) { \(js); }") { _, _ in }
+        webView.evaluateJavaScript("""
+            if (!window.__tipTapSaveCaptureID && window.isEditorContentGeneration?.('\(contentGeneration)')) { \(js); }
+            """) { _, _ in }
     }
 }
