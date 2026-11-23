@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Combine
+import Foundation
 
 /// A sheet that wraps ``RichTextEditorView`` with Cancel / Done toolbar buttons.
 ///
@@ -29,6 +30,7 @@ public struct RichTextEditorSheet: View {
     @State private var draftTitle: String
     @State private var isEditorReady = false
     @State private var isPresentingDiscardConfirmation = false
+    @State private var isPresentingSaveError = false
     @StateObject private var editorContext = EditorContext()
     @State private var linkURL = ""
     @State private var imageURL = ""
@@ -116,7 +118,7 @@ public struct RichTextEditorSheet: View {
                 }
             )
             .opacity(isEditorReady ? 1 : 0)
-            .allowsHitTesting(isEditorReady)
+            .allowsHitTesting(isEditorReady && !draftStore.isSaving)
 
             if !isEditorReady {
                 ProgressView()
@@ -127,7 +129,10 @@ public struct RichTextEditorSheet: View {
 #if canImport(UIKit)
         .navigationBarTitleDisplayMode(.inline)
 #endif
-        .interactiveDismissDisabled(hasEdits)
+        .interactiveDismissDisabled(hasEdits || draftStore.isSaving)
+        .onDisappear {
+            draftStore.endSave()
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 cancelButton
@@ -141,6 +146,7 @@ public struct RichTextEditorSheet: View {
                                 .font(.headline)
                                 .lineLimit(1)
                             RenameButton()
+                                .disabled(draftStore.isSaving)
                                 .accessibilityIdentifier("RichTextEditor.Rename")
                         }
                     }
@@ -148,6 +154,7 @@ public struct RichTextEditorSheet: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 doneButton
+                    .disabled(draftStore.isSaving)
                     .accessibilityIdentifier("RichTextEditor.Save")
             }
         }
@@ -158,6 +165,11 @@ public struct RichTextEditorSheet: View {
             Button("Keep Editing", role: .cancel) { }
         } message: {
             Text("Your changes haven’t been saved.")
+        }
+        .alert("Couldn’t Save", isPresented: $isPresentingSaveError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The editor’s latest changes couldn’t be read. Try saving again when the editor is ready.")
         }
         .alert("Add Link", isPresented: $editorContext.isLinkAlertPresented) {
             TextField("URL, email, or phone number", text: $linkURL)
@@ -214,7 +226,7 @@ public struct RichTextEditorSheet: View {
 
     @ViewBuilder
     private var doneButton: some View {
-        if hasEdits {
+        if hasEdits || draftStore.isSaving {
             if #available(iOS 26.0, macOS 26.0, *) {
                 Button(role: .confirm) {
                     performSave()
@@ -228,6 +240,8 @@ public struct RichTextEditorSheet: View {
     }
 
     private func handleCancel() {
+        guard !draftStore.didCompleteSave else { return }
+        draftStore.cancelPendingSave()
         if hasEdits {
             isPresentingDiscardConfirmation = true
         } else {
@@ -242,13 +256,18 @@ public struct RichTextEditorSheet: View {
     }
 
     private func performSave() {
-        let committedHTML = draftStore.commit(normalizingWith: normalizeOnSave)
-        htmlContent = committedHTML
-        if let navigationTitleBinding {
-            navigationTitleBinding.wrappedValue = draftTitle
+        isPresentingSaveError = false
+        draftStore.save(title: draftTitle, using: editorContext, normalizingWith: normalizeOnSave) { result in
+            switch result {
+            case let .ready(title, html):
+                htmlContent = html
+                navigationTitleBinding?.wrappedValue = title
+                onSave?(title, html)
+                dismiss()
+            case .editorUnavailable:
+                isPresentingSaveError = true
+            }
         }
-        onSave?(draftTitle, committedHTML)
-        dismiss()
     }
 
     @ViewBuilder
@@ -272,7 +291,7 @@ public struct RichTextEditorSheet: View {
                     .navigationTitle(
                         Binding(
                             get: { draftTitle },
-                            set: { draftTitle = $0 }
+                            set: { if !draftStore.isSaving { draftTitle = $0 } }
                         )
                     )
             } else {
@@ -286,8 +305,20 @@ public struct RichTextEditorSheet: View {
 
 @MainActor
 final class RichTextEditorSheetDraftStore: ObservableObject {
+    enum SaveResult {
+        case ready(title: String, html: String)
+        case editorUnavailable
+    }
+
+    private struct SaveRequest {
+        let id: UUID
+        let editorContext: EditorContext
+        var didComplete = false
+    }
+
     private(set) var originalHTMLContent: String
     @Published var draftHTMLContent: String
+    private var saveRequest: SaveRequest?
     private var isTrackingEdits = false
     private var editorBaselineHTMLContent: String?
 
@@ -297,8 +328,20 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     }
 
     var hasEdits: Bool {
+        hasEdits(in: draftHTMLContent)
+    }
+
+    var isSaving: Bool {
+        saveRequest != nil
+    }
+
+    var didCompleteSave: Bool {
+        saveRequest?.didComplete == true
+    }
+
+    private func hasEdits(in html: String) -> Bool {
         guard isTrackingEdits else { return false }
-        return !RichTextEditorView.hasIdenticalHTMLBytes(draftHTMLContent, editorBaselineHTMLContent ?? originalHTMLContent)
+        return !RichTextEditorView.hasIdenticalHTMLBytes(html, editorBaselineHTMLContent ?? originalHTMLContent)
     }
 
     func syncFromEditor(_ htmlContent: String) {
@@ -319,10 +362,68 @@ final class RichTextEditorSheetDraftStore: ObservableObject {
     }
 
     func commit(normalizingWith normalize: (String) -> String = { $0 }) -> String {
-        normalize(hasEdits ? draftHTMLContent : originalHTMLContent)
+        commit(draftHTMLContent, normalizingWith: normalize)
+    }
+
+    private func commit(_ editorHTML: String, normalizingWith normalize: (String) -> String) -> String {
+        normalize(hasEdits(in: editorHTML) ? editorHTML : originalHTMLContent)
+    }
+
+    func save(
+        title: String,
+        using editorContext: EditorContext,
+        normalizingWith normalize: @escaping (String) -> String = { $0 },
+        completion: @escaping (SaveResult) -> Void
+    ) {
+        guard !isSaving else { return }
+        let requestID = UUID()
+        saveRequest = SaveRequest(id: requestID, editorContext: editorContext)
+        // Change ownership before notifying observers that can call back in.
+        objectWillChange.send()
+        guard saveRequest?.id == requestID else { return }
+
+        let capturesEditor = isTrackingEdits
+        let finish: @MainActor (String?) -> Void = { [weak self] snapshot in
+            guard let self, self.saveRequest?.id == requestID else { return }
+            guard let snapshot else {
+                self.endSave { completion(.editorUnavailable) }
+                return
+            }
+            // Do not replay the snapshot through the editor binding. If the
+            // mirrored edit is still in flight, that could reload the document.
+            let html = self.commit(snapshot, normalizingWith: normalize)
+            guard self.saveRequest?.id == requestID else { return }
+            guard !capturesEditor || editorContext.ownsSaveCapture(requestID) else {
+                self.endSave { completion(.editorUnavailable) }
+                return
+            }
+            // Keep input suspended until the successful sheet actually disappears.
+            self.saveRequest?.didComplete = true
+            completion(.ready(title: title, html: html))
+        }
+        if capturesEditor {
+            editorContext.captureHTMLForSave(requestID, completion: finish)
+        } else {
+            // Before first readiness only the native title can be edited.
+            finish(originalHTMLContent)
+        }
+    }
+
+    func cancelPendingSave() {
+        guard !didCompleteSave else { return }
+        endSave()
+    }
+
+    func endSave(then completion: () -> Void = {}) {
+        guard let saveRequest else { return }
+        self.saveRequest = nil
+        saveRequest.editorContext.releaseSaveCapture(saveRequest.id)
+        completion()
+        objectWillChange.send()
     }
 
     func cancel() {
+        cancelPendingSave()
         draftHTMLContent = originalHTMLContent
         editorBaselineHTMLContent = originalHTMLContent
     }
